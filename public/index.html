@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SubSync Studio - 동영상 자막 싱크 조정기</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- Top Header -->
+  <header>
+    <div class="logo-area">
+      <h1>🎬 SubSync Studio</h1>
+      <span class="badge">v1.0</span>
+    </div>
+
+    <div class="header-status">
+      <div class="file-chip clickable" id="videoStatusChip" title="클릭하여 동영상 파일 선택">
+        <span>🎥</span> <span id="videoFilename">동영상 없음 (클릭하여 선택)</span>
+      </div>
+      <div class="file-chip clickable" id="subStatusChip" title="클릭하여 자막 파일 선택">
+        <span>📝</span> <span id="subFilename">자막 없음 (클릭하여 선택)</span>
+      </div>
+      <span id="subMetaInfo" style="font-size: 0.78rem; color: #9ca3af;">0개 항목</span>
+    </div>
+
+    <div class="header-actions">
+      <button class="btn btn-sm" id="btnUndo" title="실행 취소 (Ctrl+Z)" disabled>↩ 취소</button>
+      <button class="btn btn-sm" id="btnRedo" title="다시 실행 (Ctrl+Y)" disabled>↪ 재실행</button>
+      <button class="btn btn-sm" id="btnLoadFiles" title="파일 열기">📂 파일 열기</button>
+      <button class="btn btn-sm btn-success" id="btnSaveSubtitle" title="보정된 자막 저장" disabled>💾 자막 저장</button>
+      <button class="btn btn-sm" id="btnDownloadSubtitle" title="파일 다운로드" disabled>⬇ 다운로드</button>
+    </div>
+  </header>
+
+  <!-- Main Work Area -->
+  <div class="app-container">
+    
+    <!-- Left Pane: Video, Waveform & Quick Offset -->
+    <div class="left-pane">
+      
+      <!-- Video Container -->
+      <div class="video-container" id="videoBox">
+        <video id="videoPlayer" preload="metadata" playsinline></video>
+        
+        <!-- Live Subtitle Overlay -->
+        <div class="subtitle-overlay" id="subOverlay">
+          <div class="subtitle-text" id="subTextDisplay" style="display: none;"></div>
+        </div>
+
+        <!-- Video Placeholder if no video loaded -->
+        <div class="video-placeholder" id="videoPlaceholder">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+          </svg>
+          <div>
+            <strong>동영상 및 자막 파일을 불러오세요</strong>
+            <p style="font-size: 0.8rem; margin-top: 4px;">상단의 [📂 파일 열기] 버튼을 누르거나 파일을 드래그하세요</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Player Controls -->
+      <div class="player-controls">
+        <div class="progress-row">
+          <input type="range" class="seek-bar" id="seekBar" min="0" max="100" step="0.01" value="0">
+          <div class="timecode-display" id="timecodeDisplay">00:00:00.000 / 00:00:00.000</div>
+        </div>
+
+        <div class="controls-button-row">
+          <div class="ctrl-group">
+            <button class="btn btn-sm" id="btnPlayPause" title="재생/일시정지 (Space)">▶ 재생</button>
+            <button class="btn btn-sm" id="btnStepBack" title="-1 프레임 (0.04s)">◀ 이전</button>
+            <button class="btn btn-sm" id="btnStepForward" title="+1 프레임 (0.04s)">다음 ▶</button>
+            <button class="btn btn-sm" id="btnBack5s" title="-5초">⏪ -5s</button>
+            <button class="btn btn-sm" id="btnFwd5s" title="+5초">+5s ⏩</button>
+          </div>
+
+          <div class="ctrl-group">
+            <div class="volume-box">
+              <button class="btn btn-sm" id="btnVolume" title="음소거 토글 (M)" style="padding: 2px 6px; font-size: 0.9rem;">🔊</button>
+              <input type="range" class="volume-slider" id="volumeSlider" min="0" max="1" step="0.02" value="1" title="볼륨 조절">
+              <span id="volumeValue" class="volume-val">100%</span>
+            </div>
+
+            <label style="font-size: 0.78rem; color: #9ca3af; margin-left: 8px;">배속</label>
+            <select id="playbackRateSelect" class="btn btn-sm" style="padding: 2px 6px;">
+              <option value="0.5">0.5x</option>
+              <option value="0.75">0.75x</option>
+              <option value="1.0" selected>1.0x</option>
+              <option value="1.25">1.25x</option>
+              <option value="1.5">1.5x</option>
+              <option value="2.0">2.0x</option>
+            </select>
+
+            <label style="font-size: 0.78rem; color: #9ca3af; margin-left: 8px;">자막 크기</label>
+            <select id="subFontSizeSelect" class="btn btn-sm" style="padding: 2px 6px;" title="동영상 자막 글자 크기 조절">
+              <option value="0.8">작게 (80%)</option>
+              <option value="0.9">약간 작게 (90%)</option>
+              <option value="1.0" selected>보통 (100%)</option>
+              <option value="1.15">약간 크게 (115%)</option>
+              <option value="1.3">크게 (130%)</option>
+              <option value="1.5">더 크게 (150%)</option>
+              <option value="1.8">매우 크게 (180%)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Waveform & Subtitle Timeline -->
+      <div class="timeline-section">
+        <div class="timeline-header">
+          <span>🔊 오디오 파형 & 자막 대사 타임라인</span>
+          <span id="timelineZoomLabel">클릭하여 해당 위치로 탐색</span>
+        </div>
+        <div class="timeline-canvas-container" id="timelineContainer">
+          <canvas id="waveformCanvas"></canvas>
+          <div class="timeline-playhead" id="timelinePlayhead"></div>
+        </div>
+      </div>
+
+      <!-- Quick Offset Adjust Bar -->
+      <div class="quick-adjust-bar">
+        <div class="quick-adjust-group">
+          <button class="btn btn-sm" data-shift="-1.0">◀ -1.0s</button>
+          <button class="btn btn-sm" data-shift="-0.5">◀ -0.5s</button>
+          <button class="btn btn-sm btn-amber" data-shift="-0.1">◀ -0.1s (Z)</button>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 0.75rem; color: #9ca3af;">누적 오프셋:</span>
+          <span class="quick-offset-val" id="totalOffsetBadge">0.000s</span>
+          <button class="btn btn-sm" id="btnResetOffset" title="오프셋 초기화" style="padding: 2px 6px; font-size: 0.75rem;">초기화</button>
+        </div>
+
+        <div class="quick-adjust-group">
+          <button class="btn btn-sm btn-amber" data-shift="0.1">+0.1s ▶ (X)</button>
+          <button class="btn btn-sm" data-shift="0.5">+0.5s ▶</button>
+          <button class="btn btn-sm" data-shift="1.0">+1.0s ▶</button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Draggable Pane Resizer Splitter -->
+    <div class="pane-resizer" id="paneResizer" title="좌우 너비 조절 (드래그)"></div>
+
+    <!-- Right Pane: Calibration Tabs & Subtitle Table -->
+    <div class="right-pane" id="rightPane">
+      
+      <!-- Calibration Mode Tabs -->
+      <div class="tabs-header">
+        <button class="tab-btn active" data-tab="tabTwoPoint">📍 2포인트 비례 보정</button>
+        <button class="tab-btn" data-tab="tabAutoSync">⚡ 원클릭 자동 음성 싱크</button>
+        <button class="tab-btn" data-tab="tabSegment">✂️ 구간 분할 보정</button>
+        <button class="tab-btn" data-tab="tabManualFps">⚙️ 프레임레이트 변환</button>
+      </div>
+
+      <!-- Tab 1: 2-Point Linear Calibration -->
+      <div class="tab-content active" id="tabTwoPoint">
+        <div class="calib-card">
+          <div class="calib-row">
+            <!-- Point 1 -->
+            <div class="calib-point-box">
+              <h4>
+                <span>기준점 1 (영상 초반)</span>
+                <span id="p1Status" style="font-size: 0.7rem; color: #9ca3af;">미설정</span>
+              </h4>
+              <div class="time-input-group">
+                <label>영상 시간:</label>
+                <input type="text" id="p1VideoTime" class="time-input" placeholder="00:00:00.000">
+                <button class="btn btn-sm" id="btnSetP1Video" title="현재 재생 시간">현재 시간</button>
+              </div>
+              <div class="time-input-group">
+                <label>자막 시간:</label>
+                <input type="text" id="p1SubTime" class="time-input" placeholder="00:00:00.000">
+                <button class="btn btn-sm" id="btnSetP1Sub" title="선택한 자막 시간">선택 자막</button>
+              </div>
+            </div>
+
+            <!-- Point 2 -->
+            <div class="calib-point-box">
+              <h4>
+                <span>기준점 2 (영상 후반)</span>
+                <span id="p2Status" style="font-size: 0.7rem; color: #9ca3af;">미설정</span>
+              </h4>
+              <div class="time-input-group">
+                <label>영상 시간:</label>
+                <input type="text" id="p2VideoTime" class="time-input" placeholder="00:00:00.000">
+                <button class="btn btn-sm" id="btnSetP2Video" title="현재 재생 시간">현재 시간</button>
+              </div>
+              <div class="time-input-group">
+                <label>자막 시간:</label>
+                <input type="text" id="p2SubTime" class="time-input" placeholder="00:00:00.000">
+                <button class="btn btn-sm" id="btnSetP2Sub" title="선택한 자막 시간">선택 자막</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Calculation Summary Box -->
+          <div class="calc-summary-box" id="twoPointCalcBox">
+            <div class="calc-metrics">
+              <div class="metric-item">
+                <span class="metric-label">속도 배율 (Scale)</span>
+                <span class="metric-val" id="twoPointScale">1.000000</span>
+              </div>
+              <div class="metric-item">
+                <span class="metric-label">시작 지연 (Offset)</span>
+                <span class="metric-val" id="twoPointOffset">0.000s</span>
+              </div>
+              <div class="metric-item">
+                <span class="metric-label">추정 패턴</span>
+                <span class="metric-val" id="twoPointPattern" style="color: var(--accent-blue); font-size: 0.82rem;">기준점을 입력하세요</span>
+              </div>
+              <div class="metric-item">
+                <span class="metric-label">10분당 누적오차</span>
+                <span class="metric-val" id="twoPointDrift">0.0s</span>
+              </div>
+            </div>
+
+            <button class="btn btn-primary" id="btnApplyTwoPoint" disabled>🚀 2포인트 싱크 적용</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 2: Auto-Sync via Audio VAD -->
+      <div class="tab-content" id="tabAutoSync">
+        <div class="calib-card">
+          <div style="font-size: 0.8rem; color: #9ca3af;">
+            ⚡ FFmpeg로 동영상 오디오의 실제 대사 발화 구간(VAD)을 추출하고, 자막 대사 시점과의 교차상관(Cross-correlation)을 분석하여 최적의 비율과 오프셋을 자동 탐색합니다.
+          </div>
+
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px;">
+            <button class="btn btn-primary" id="btnRunAutoSync">🔍 자동 싱크 분석 시작</button>
+            <span id="autoSyncProgressText" style="font-size: 0.8rem; color: var(--text-muted);"></span>
+          </div>
+
+          <div class="calc-summary-box" id="autoSyncResultBox" style="display: none; margin-top: 6px;">
+            <div class="calc-metrics">
+              <div class="metric-item">
+                <span class="metric-label">신뢰도</span>
+                <span class="metric-val" id="autoConfidence" style="color: #10b981;">0%</span>
+              </div>
+              <div class="metric-item">
+                <span class="metric-label">발견된 배율</span>
+                <span class="metric-val" id="autoScale">1.000000</span>
+              </div>
+              <div class="metric-item">
+                <span class="metric-label">도출된 오프셋</span>
+                <span class="metric-val" id="autoOffset">0.000s</span>
+              </div>
+              <div class="metric-item">
+                <span class="metric-label">패턴</span>
+                <span class="metric-val" id="autoPattern" style="color: var(--accent-blue); font-size: 0.82rem;">-</span>
+              </div>
+            </div>
+            <button class="btn btn-success" id="btnApplyAutoSync">✅ 자동 싱크 결과 적용</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 3: Segment Sync -->
+      <div class="tab-content" id="tabSegment">
+        <div class="calib-card">
+          <div style="font-size: 0.8rem; color: #9ca3af;">
+            ✂️ 중간 광고, 삭제 씬 등으로 특정 시점 이후에만 싱크가 어긋나는 경우, 현재 선택한 자막부터 끝까지(또는 특정 범위)만 독립적으로 오프셋을 조절할 수 있습니다.
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px; margin-top: 6px;">
+            <span style="font-size: 0.8rem;">적용 범위:</span>
+            <label style="font-size: 0.8rem; cursor: pointer;">
+              <input type="radio" name="segRange" value="selectedToEnd" checked> 선택한 자막(#<span id="segSelectedId">-</span>)부터 끝까지
+            </label>
+            <label style="font-size: 0.8rem; cursor: pointer;">
+              <input type="radio" name="segRange" value="all"> 전체 자막
+            </label>
+          </div>
+          <div style="display: flex; align-items: center; gap: 6px; margin-top: 6px;">
+            <button class="btn btn-sm" id="btnSegShiftMinus1">-1.0s</button>
+            <button class="btn btn-sm" id="btnSegShiftMinus05">-0.5s</button>
+            <button class="btn btn-sm" id="btnSegShiftMinus01">-0.1s</button>
+            <input type="number" id="segCustomShiftInput" class="time-input" style="width: 80px;" step="0.1" value="0.0">
+            <span style="font-size: 0.8rem;">초 이동</span>
+            <button class="btn btn-sm btn-primary" id="btnApplySegCustom">적용</button>
+            <button class="btn btn-sm" id="btnSegShiftPlus01">+0.1s</button>
+            <button class="btn btn-sm" id="btnSegShiftPlus05">+0.5s</button>
+            <button class="btn btn-sm" id="btnSegShiftPlus1">+1.0s</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 4: Manual FPS Conversion -->
+      <div class="tab-content" id="tabManualFps">
+        <div class="calib-card">
+          <div style="font-size: 0.8rem; color: #9ca3af;">
+            ⚙️ 널리 쓰이는 표준 프레임레이트 변환 프리셋을 원클릭으로 적용합니다.
+          </div>
+          <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px;">
+            <button class="btn btn-sm" data-fps="pal-to-ntsc">PAL (25fps) → NTSC (23.976fps) [×1.0427]</button>
+            <button class="btn btn-sm" data-fps="ntsc-to-pal">NTSC (23.976fps) → PAL (25fps) [×0.9590]</button>
+            <button class="btn btn-sm" data-fps="film-to-ntsc">Film (24fps) → NTSC (23.976fps) [×1.0010]</button>
+            <button class="btn btn-sm" data-fps="ntsc-to-film">NTSC (23.976fps) → Film (24fps) [×0.9990]</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Subtitle List Table -->
+      <div class="subtitle-list-section">
+        <div class="subtitle-list-header">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <strong style="font-size: 0.88rem;">자막 목록</strong>
+            <span id="subCountBadge" style="font-size: 0.75rem; color: #9ca3af;">(0개)</span>
+          </div>
+          <input type="text" id="subSearchInput" class="search-input" placeholder="대사 검색 (Ctrl+F)...">
+        </div>
+
+        <div class="subtitle-table-container" id="subTableContainer">
+          <table class="sub-table" id="subTable">
+            <thead>
+              <tr>
+                <th class="col-id">#</th>
+                <th class="col-time">시작</th>
+                <th class="col-time">종료</th>
+                <th class="col-dur">길이</th>
+                <th class="col-text">대사 내용</th>
+                <th class="col-action">기준점</th>
+              </tr>
+            </thead>
+            <tbody id="subTableBody">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Hidden File Inputs -->
+  <input type="file" id="subFileInput" accept=".srt,.smi,.sami,.vtt" style="display: none;">
+  <input type="file" id="videoFileInput" accept="video/*,.mkv,.avi,.mp4,.webm,.ts,.mov" style="display: none;">
+
+  <!-- Open Files Modal -->
+  <div class="modal-overlay" id="fileModal" style="display: none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>📂 파일 열기</h3>
+        <button class="close-btn" id="btnCloseFileModal">&times;</button>
+      </div>
+
+      <div>
+        <label style="font-size: 0.82rem; font-weight: 600; color: #e5e7eb; display: block; margin-bottom: 4px;">
+          동영상 파일 (MP4, MKV, AVI, WebM 등)
+        </label>
+        <div style="display: flex; gap: 6px;">
+          <input type="text" id="videoPathInput" class="time-input" placeholder="직접 파일 경로 입력 (예: C:\Movies\sample.mkv)" style="flex: 1;">
+          <button class="btn btn-sm" id="btnBrowseVideo">파일 선택</button>
+        </div>
+      </div>
+
+      <div style="margin-top: 10px;">
+        <label style="font-size: 0.82rem; font-weight: 600; color: #e5e7eb; display: block; margin-bottom: 4px;">
+          자막 파일 (SRT, SMI, VTT)
+        </label>
+        <div style="display: flex; gap: 6px;">
+          <input type="text" id="subPathInput" class="time-input" placeholder="직접 파일 경로 입력 (예: C:\Movies\sample.smi)" style="flex: 1;">
+          <button class="btn btn-sm" id="btnBrowseSubtitle">파일 선택</button>
+        </div>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;">
+        <button class="btn" id="btnCancelLoad">취소</button>
+        <button class="btn btn-primary" id="btnConfirmLoad">불러오기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Save Modal -->
+  <div class="modal-overlay" id="saveModal" style="display: none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>💾 자막 파일 저장</h3>
+        <button class="close-btn" id="btnCloseSaveModal">&times;</button>
+      </div>
+
+      <div>
+        <label style="font-size: 0.82rem; color: #9ca3af; display: block; margin-bottom: 4px;">저장할 포맷</label>
+        <select id="saveFormatSelect" class="time-input" style="width: 100%;">
+          <option value="SRT" selected>SRT (가장 표준적인 자막 형식)</option>
+          <option value="SMI">SMI (SAMI 형식 - 한국어 지원)</option>
+          <option value="VTT">WebVTT 형식</option>
+        </select>
+      </div>
+
+      <div style="margin-top: 10px;">
+        <label style="font-size: 0.82rem; color: #9ca3af; display: block; margin-bottom: 4px;">저장 방식</label>
+        <label style="font-size: 0.85rem; display: flex; align-items: center; gap: 8px; cursor: pointer;">
+          <input type="checkbox" id="overwriteCheckbox">
+          <span>원본 파일 덮어쓰기 (원본은 자동 백업 .bak 생성)</span>
+        </label>
+        <div style="font-size: 0.75rem; color: #9ca3af; margin-top: 4px;">
+          체크 해제 시 원본 보존을 위해 <code>[synced] 파일명.srt</code> 형태로 새 파일이 저장됩니다.
+        </div>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;">
+        <button class="btn" id="btnCancelSave">취소</button>
+        <button class="btn btn-success" id="btnConfirmSave">저장 완료</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- Scripts -->
+  <script src="js/timeUtils.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

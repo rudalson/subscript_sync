@@ -1,0 +1,18 @@
+{
+  "name": "subscript_sync",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/test_sync.js"
+  },
+  "keywords": [],
+  "type": "commonjs",
+  "dependencies": {
+    "express": "^5.3.0",
+    "iconv-lite": "^0.7.3",
+    "jschardet": "^4.0.0",
+    "multer": "^2.4.0"
+  }
+}
