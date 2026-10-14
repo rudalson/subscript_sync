@@ -11,9 +11,6 @@ const state = {
   undoStack: [],
   redoStack: [],
   selectedIndex: -1,
-  p1: { videoTime: null, subTime: null },
-  p2: { videoTime: null, subTime: null },
-  twoPointParams: null,
   totalOffset: 0,
   waveformOverview: [],
   autoSyncResult: null,
@@ -73,23 +70,6 @@ const subTableBody = document.getElementById('subTableBody');
 const subSearchInput = document.getElementById('subSearchInput');
 const subListEmpty = document.getElementById('subListEmpty');
 
-// 2-Point Calibration Tab
-const p1VideoInput = document.getElementById('p1VideoTime');
-const p1SubInput = document.getElementById('p1SubTime');
-const p2VideoInput = document.getElementById('p2VideoTime');
-const p2SubInput = document.getElementById('p2SubTime');
-const p1Status = document.getElementById('p1Status');
-const p2Status = document.getElementById('p2Status');
-const twoPointScale = document.getElementById('twoPointScale');
-const twoPointOffset = document.getElementById('twoPointOffset');
-const twoPointPattern = document.getElementById('twoPointPattern');
-const twoPointDrift = document.getElementById('twoPointDrift');
-const btnApplyTwoPoint = document.getElementById('btnApplyTwoPoint');
-const btnSetP1Video = document.getElementById('btnSetP1Video');
-const btnSetP1Sub = document.getElementById('btnSetP1Sub');
-const btnSetP2Video = document.getElementById('btnSetP2Video');
-const btnSetP2Sub = document.getElementById('btnSetP2Sub');
-
 // Auto-Sync Tab
 const btnRunAutoSync = document.getElementById('btnRunAutoSync');
 const autoSyncProgressText = document.getElementById('autoSyncProgressText');
@@ -102,11 +82,6 @@ const autoRefineInfo = document.getElementById('autoRefineInfo');
 const refineCuesCheckbox = document.getElementById('refineCuesCheckbox');
 const segmentAlignCheckbox = document.getElementById('segmentAlignCheckbox');
 const btnApplyAutoSync = document.getElementById('btnApplyAutoSync');
-
-// Segment Sync Tab
-const segSelectedId = document.getElementById('segSelectedId');
-const segCustomShiftInput = document.getElementById('segCustomShiftInput');
-const btnApplySegCustom = document.getElementById('btnApplySegCustom');
 
 // Modals
 const fileModal = document.getElementById('fileModal');
@@ -412,31 +387,12 @@ function renderSubtitleTable() {
       <td class="col-time">${formatTime(item.end)}</td>
       <td class="col-dur">${duration}s</td>
       <td class="col-text">${escapeHtml(cleanCueText).replace(/\n/g, '<br>')}</td>
-      <td class="col-action">
-        <button class="btn btn-p1" title="이 자막과 현재 재생 시점을 기준점 1로" data-id="${item.id}">P1</button>
-        <button class="btn btn-p2" title="이 자막과 현재 재생 시점을 기준점 2로" data-id="${item.id}">P2</button>
-      </td>
     `;
 
     // Row click: seek to subtitle start time & select
-    tr.addEventListener('click', (e) => {
-      if (e.target.tagName === 'BUTTON') return;
+    tr.addEventListener('click', () => {
       selectSubtitle(item.id - 1);
       video.currentTime = item.start;
-    });
-
-    // P1 / P2 button clicks
-    const btnP1 = tr.querySelector('.btn-p1');
-    const btnP2 = tr.querySelector('.btn-p2');
-
-    btnP1.addEventListener('click', (e) => {
-      e.stopPropagation();
-      setCalibrationPoint(1, video.currentTime, item.start, item.text);
-    });
-
-    btnP2.addEventListener('click', (e) => {
-      e.stopPropagation();
-      setCalibrationPoint(2, video.currentTime, item.start, item.text);
     });
 
     fragment.appendChild(tr);
@@ -449,7 +405,6 @@ function renderSubtitleTable() {
 
 function selectSubtitle(index) {
   state.selectedIndex = index;
-  segSelectedId.textContent = index >= 0 ? (index + 1) : '-';
 
   document.querySelectorAll('#subTableBody tr').forEach(row => row.classList.remove('selected'));
   const row = document.getElementById(`sub-row-${index}`);
@@ -576,109 +531,6 @@ timelineContainer.addEventListener('click', (e) => {
   const duration = video.duration || 0;
   if (duration > 0) {
     video.currentTime = pct * duration;
-  }
-});
-
-/* =========================================================
-   2-Point Calibration Logic
-   ========================================================= */
-function setCalibrationPoint(pointNum, videoTime, subTime, text = '') {
-  const vTime = Number(videoTime.toFixed(3));
-  const sTime = Number(subTime.toFixed(3));
-
-  if (pointNum === 1) {
-    state.p1 = { videoTime: vTime, subTime: sTime };
-    p1VideoInput.value = formatTime(vTime);
-    p1SubInput.value = formatTime(sTime);
-    p1Status.textContent = '설정됨';
-    p1Status.classList.add('is-set');
-    showToast(`P1 — 영상 ${formatTime(vTime)} · 자막 ${formatTime(sTime)}`, 'success');
-  } else {
-    state.p2 = { videoTime: vTime, subTime: sTime };
-    p2VideoInput.value = formatTime(vTime);
-    p2SubInput.value = formatTime(sTime);
-    p2Status.textContent = '설정됨';
-    p2Status.classList.add('is-set');
-    showToast(`P2 — 영상 ${formatTime(vTime)} · 자막 ${formatTime(sTime)}`, 'success');
-  }
-
-  calculateTwoPoint();
-}
-
-function calculateTwoPoint() {
-  const points = [state.p1.videoTime, state.p1.subTime, state.p2.videoTime, state.p2.subTime];
-  if (points.some(t => t === null)) return;
-
-  let params;
-  try {
-    params = SyncEngine.calculateTwoPointParameters(state.p1, state.p2);
-  } catch (err) {
-    state.twoPointParams = null;
-    twoPointPattern.textContent = err.message;
-    twoPointPattern.classList.add('is-error');
-    btnApplyTwoPoint.disabled = true;
-    return;
-  }
-  twoPointPattern.classList.remove('is-error');
-
-  const { scale, offset, driftPer10Min, pattern } = params;
-  state.twoPointParams = params;
-  twoPointScale.textContent = scale.toFixed(6);
-  twoPointOffset.textContent = `${offset >= 0 ? '+' : ''}${offset.toFixed(3)}s`;
-  twoPointDrift.textContent = `${driftPer10Min >= 0 ? '+' : ''}${driftPer10Min.toFixed(2)}s`;
-  twoPointPattern.textContent = pattern;
-  btnApplyTwoPoint.disabled = false;
-}
-
-// 2-Point Input buttons
-btnSetP1Video.addEventListener('click', () => {
-  p1VideoInput.value = formatTime(video.currentTime);
-  state.p1.videoTime = Number(video.currentTime.toFixed(3));
-  calculateTwoPoint();
-});
-
-btnSetP1Sub.addEventListener('click', () => {
-  if (state.selectedIndex >= 0 && state.subtitles[state.selectedIndex]) {
-    const sub = state.subtitles[state.selectedIndex];
-    p1SubInput.value = formatTime(sub.start);
-    state.p1.subTime = Number(sub.start.toFixed(3));
-    calculateTwoPoint();
-  } else {
-    showToast('목록에서 기준이 될 자막을 먼저 선택하세요.', 'error');
-  }
-});
-
-btnSetP2Video.addEventListener('click', () => {
-  p2VideoInput.value = formatTime(video.currentTime);
-  state.p2.videoTime = Number(video.currentTime.toFixed(3));
-  calculateTwoPoint();
-});
-
-btnSetP2Sub.addEventListener('click', () => {
-  if (state.selectedIndex >= 0 && state.subtitles[state.selectedIndex]) {
-    const sub = state.subtitles[state.selectedIndex];
-    p2SubInput.value = formatTime(sub.start);
-    state.p2.subTime = Number(sub.start.toFixed(3));
-    calculateTwoPoint();
-  } else {
-    showToast('목록에서 기준이 될 자막을 먼저 선택하세요.', 'error');
-  }
-});
-
-// Apply 2-Point Sync
-btnApplyTwoPoint.addEventListener('click', async () => {
-  try {
-    if (!state.twoPointParams) return;
-    const { scale, offset } = state.twoPointParams;
-
-    pushHistory();
-    state.subtitles = SyncEngine.applyLinearSync(state.subtitles, scale, offset);
-
-    renderSubtitleTable();
-    drawWaveform();
-    showToast(`2점 보정 적용 — 배율 ${scale}, 오프셋 ${offset}s`, 'success');
-  } catch (err) {
-    showToast(`2점 보정 실패: ${err.message}`, 'error');
   }
 });
 
@@ -812,11 +664,11 @@ btnRunAutoSync.addEventListener('click', async () => {
     autoSyncResultBox.style.display = 'flex';
     autoSyncProgressText.textContent = '분석 완료';
     const vadLabel = data.vadSource === 'silero' ? '신경망 음성 감지' : '에너지 기반 음성 감지';
-    showToast(`자동 정렬 분석 완료 — 신뢰도 ${data.confidence}% · ${vadLabel}`, 'success');
+    showToast(`자막 정렬 분석 완료 — 신뢰도 ${data.confidence}% · ${vadLabel}`, 'success');
   } catch (err) {
     autoSyncProgressText.classList.add('is-error');
     autoSyncProgressText.textContent = '분석 실패';
-    showToast(`자동 정렬 분석 실패: ${err.message}`, 'error');
+    showToast(`자막 정렬 분석 실패: ${err.message}`, 'error');
   } finally {
     btnRunAutoSync.disabled = false;
   }
@@ -829,42 +681,7 @@ btnApplyAutoSync.addEventListener('click', () => {
   state.subtitles = state.autoSyncResult.syncedItems;
   renderSubtitleTable();
   drawWaveform();
-  showToast('자동 정렬 결과 적용', 'success');
-});
-
-/* =========================================================
-   Segment Sync Logic
-   ========================================================= */
-function applySegmentShift(delta) {
-  if (!state.subtitles || state.subtitles.length === 0) return;
-
-  const mode = document.querySelector('input[name="segRange"]:checked').value;
-  let startIdx = 0;
-  if (mode === 'selectedToEnd') {
-    if (state.selectedIndex < 0) {
-      return showToast('시작할 자막을 목록에서 먼저 선택하세요.', 'error');
-    }
-    startIdx = state.selectedIndex;
-  }
-
-  pushHistory();
-  state.subtitles = SyncEngine.applyShiftOffset(state.subtitles, delta, { startIndex: startIdx });
-
-  renderSubtitleTable();
-  drawWaveform();
-  showToast(`#${startIdx + 1}부터 ${delta >= 0 ? '+' : ''}${delta.toFixed(1)}s`, 'success');
-}
-
-document.getElementById('btnSegShiftMinus1').addEventListener('click', () => applySegmentShift(-1.0));
-document.getElementById('btnSegShiftMinus05').addEventListener('click', () => applySegmentShift(-0.5));
-document.getElementById('btnSegShiftMinus01').addEventListener('click', () => applySegmentShift(-0.1));
-document.getElementById('btnSegShiftPlus01').addEventListener('click', () => applySegmentShift(0.1));
-document.getElementById('btnSegShiftPlus05').addEventListener('click', () => applySegmentShift(0.5));
-document.getElementById('btnSegShiftPlus1').addEventListener('click', () => applySegmentShift(1.0));
-
-btnApplySegCustom.addEventListener('click', () => {
-  const delta = parseFloat(segCustomShiftInput.value || '0');
-  if (delta !== 0) applySegmentShift(delta);
+  showToast('자막 정렬 결과 적용', 'success');
 });
 
 /* =========================================================

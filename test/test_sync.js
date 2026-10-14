@@ -3,7 +3,7 @@ const iconv = require('iconv-lite');
 
 const { parseSubtitle, decodeSubtitleBuffer, parseSRT, parseSMI, parseVTT } = require('../lib/subtitleParser');
 const { serializeSubtitle, toSRT, toSMI, toVTT } = require('../lib/subtitleSerializer');
-const { calculateTwoPointParameters, applyLinearSync, applyShiftOffset, identifyFpsPattern } = require('../lib/syncEngine');
+const { applyLinearSync, applyShiftOffset, identifyFpsPattern } = require('../lib/syncEngine');
 const { computeVAD, computeNeuralVAD, findOptimalSync } = require('../lib/audioAnalyzer');
 const { createSileroStream } = require('../lib/neuralVad');
 const { refineCueTimings } = require('../lib/cueRefiner');
@@ -76,25 +76,21 @@ assert.strictEqual(parsedSMI.items[1].start, 6.0);
 assert.strictEqual(parsedSMI.items[1].end, 9.5);
 console.log('  ✅ SAMI 구조 및 줄바꿈/태그 제거 파싱 성공!');
 
-// Test 3: 2-Point Linear Calibration Math
-console.log('3. 2-포인트 선형 비례 보정 수학 계산 테스트');
-// Scenario: PAL (25fps) to NTSC (23.976fps)
-// Ratio is 25 / 23.976 = ~1.042709
-// Suppose at subtitle time 100.0s, video is at 105.0s (offset +0.729)
-// At subtitle time 3000.0s (50 min), video is at (3000 * 1.042709 + 0.729) = 3128.856s
-const p1 = { subTime: 100.0, videoTime: 105.0 };
-const p2 = { subTime: 3000.0, videoTime: 3128.856 };
+// Test 3: Linear transform & framerate pattern naming
+console.log('3. 선형 변환 및 프레임레이트 패턴 판별 테스트');
+// PAL (25fps) subtitles on an NTSC/Film (23.976fps) video: ratio 25 / 23.976 ≈ 1.042709
+assert(identifyFpsPattern(25 / 23.976).includes('PAL'));
+assert(identifyFpsPattern(1.0).includes('동일'));
+assert(identifyFpsPattern(1.2).includes('사용자 정의'));
+console.log('  ✅ 프레임레이트 패턴 판별 성공!');
 
-const params = calculateTwoPointParameters(p1, p2);
-console.log('  계산 결과:', params);
-assert(Math.abs(params.scale - 1.042709) < 0.001);
-assert(params.pattern.includes('PAL'));
-console.log('  ✅ PAL -> NTSC 자동 감지 및 비율 계산 성공!');
-
-const synced = applyLinearSync(parsedSRT.items, params.scale, params.offset);
+const synced = applyLinearSync(parsedSRT.items, 25 / 23.976, 0.729);
 assert.strictEqual(synced.length, 2);
-assert(synced[0].start > parsedSRT.items[0].start);
-console.log('  ✅ 자막 타임스탬프 비례 재계산 성공!');
+assert.strictEqual(synced[0].start, Number((80 * 25 / 23.976 + 0.729).toFixed(3)));
+const shifted = applyShiftOffset(parsedSRT.items, -100);
+assert.strictEqual(shifted[0].start, 0); // clamped at zero
+assert(shifted[0].end > shifted[0].start);
+console.log('  ✅ 자막 타임스탬프 비례 재계산 및 이동 성공!');
 
 // Test 4: Audio VAD & Auto-sync Cross Correlation Simulation
 console.log('4. VAD 및 자동 교차상관 싱크 엔진 시뮬레이션 테스트');
