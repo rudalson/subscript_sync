@@ -210,14 +210,17 @@ kbd {
   flex: 1;
   min-width: 0;
   display: flex;
-  gap: 6px;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
 }
 
 .slot {
+  flex: 0 1 auto;
   min-width: 0;
-  max-width: 340px;
+  max-width: min(640px, 45vw);
   height: 28px;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 8px;
   padding: 0 10px;
@@ -227,6 +230,7 @@ kbd {
   color: var(--text-faint);
   cursor: pointer;
   text-align: left;
+  transition: background-color 0.1s, border-color 0.1s, color 0.1s;
 }
 
 .slot:hover {
@@ -248,19 +252,14 @@ kbd {
 }
 
 .slot-name {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 
 .slot-meta {
-  flex-shrink: 0;
-  font-family: var(--font-mono);
-  font-size: 0.82rem;
-  color: var(--text-faint);
-}
-
-.slot-meta:empty {
   display: none;
 }
 
@@ -1330,6 +1329,6 @@ video {
   }
 
   .slot {
-    max-width: 220px;
+    max-width: min(360px, 36vw);
   }
 }

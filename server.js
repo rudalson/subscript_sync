@@ -35,9 +35,19 @@ app.post('/api/upload/subtitle', upload.single('subtitle'), (req, res) => {
     const { text, encoding } = decodeSubtitleBuffer(req.file.buffer);
     const parsed = parseSubtitle(text);
 
+    let originalname = req.file.originalname;
+    try {
+      const decoded = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
+      if (decoded && !decoded.includes('\ufffd')) {
+        originalname = decoded;
+      }
+    } catch (_) {
+      originalname = req.file.originalname;
+    }
+
     return res.json({
       success: true,
-      filename: req.file.originalname,
+      filename: originalname,
       format: parsed.format,
       encoding,
       count: parsed.items.length,

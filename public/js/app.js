@@ -383,9 +383,14 @@ function renderSubtitleTable() {
   subCountBadge.textContent = query
     ? `${state.filteredSubtitles.length} / ${state.subtitles.length}`
     : String(state.subtitles.length);
-  subMetaInfo.textContent = state.subtitles.length > 0
-    ? `${state.subMeta ? state.subMeta.format : 'SRT'} · ${state.subtitles.length}`
-    : '';
+  if (subMetaInfo) {
+    subMetaInfo.textContent = state.subtitles.length > 0
+      ? `${state.subMeta ? state.subMeta.format : 'SRT'} · ${state.subtitles.length}`
+      : '';
+  }
+  if (subStatusChip && state.subMeta) {
+    subStatusChip.title = `${state.subMeta.filename} (${state.subMeta.format || 'SRT'}, ${state.subtitles.length}개 대사)`;
+  }
   subListEmpty.style.display = state.filteredSubtitles.length === 0 ? 'block' : 'none';
   subListEmpty.textContent = state.subtitles.length === 0
     ? '자막 파일을 불러오면 여기에 대사가 표시됩니다.'
@@ -912,6 +917,7 @@ document.getElementById('btnConfirmLoad').addEventListener('click', async () => 
         state.subMeta = data.subtitle;
         state.subtitles = data.subtitle.items;
         subFilename.textContent = data.subtitle.filename;
+        subStatusChip.title = `${data.subtitle.filename} (${data.subtitle.format}, ${data.subtitle.count}개 대사)`;
         subStatusChip.classList.add('is-loaded');
         renderSubtitleTable();
         showToast(`자막 ${data.subtitle.count}개 불러옴 · ${data.subtitle.format}`, 'success');
@@ -920,6 +926,7 @@ document.getElementById('btnConfirmLoad').addEventListener('click', async () => 
       if (data.video) {
         state.videoMeta = data.video;
         videoFilename.textContent = data.video.filename;
+        videoStatusChip.title = data.video.path || data.video.filename;
         videoStatusChip.classList.add('is-loaded');
         video.src = `/api/stream/video?path=${encodeURIComponent(data.video.path)}`;
         loadAudioWaveform(data.video.path);
@@ -939,6 +946,7 @@ function loadVideoFileDirectly(file) {
     isDirectPlayable: true
   };
   videoFilename.textContent = file.name;
+  videoStatusChip.title = file.name;
   videoStatusChip.classList.add('is-loaded');
   video.src = URL.createObjectURL(file);
   showToast(`동영상 · ${file.name}`, 'info');
@@ -956,13 +964,15 @@ async function loadSubtitleFileDirectly(file) {
     const data = await res.json();
     if (!data.success) throw new Error(data.error);
 
+    const safeFilename = file.name || data.filename;
     state.subMeta = {
-      filename: data.filename,
+      filename: safeFilename,
       format: data.format,
       encoding: data.encoding
     };
     state.subtitles = data.items;
-    subFilename.textContent = data.filename;
+    subFilename.textContent = safeFilename;
+    subStatusChip.title = `${safeFilename} (${data.format}, ${data.count}개 대사)`;
     subStatusChip.classList.add('is-loaded');
     renderSubtitleTable();
     drawWaveform();
