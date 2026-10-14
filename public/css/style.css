@@ -195,9 +195,18 @@ kbd {
 }
 
 .brand {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
   font-weight: 700;
   font-size: 1.05rem;
   letter-spacing: -0.02em;
+}
+
+.brand-mark {
+  width: 22px;
+  height: 22px;
+  margin-right: 8px;
 }
 
 .brand span {
