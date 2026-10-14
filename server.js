@@ -6,7 +6,7 @@ const multer = require('multer');
 const { decodeSubtitleBuffer, parseSubtitle } = require('./lib/subtitleParser');
 const { serializeSubtitle } = require('./lib/subtitleSerializer');
 const { calculateTwoPointParameters, applyLinearSync, applyShiftOffset, identifyFpsPattern } = require('./lib/syncEngine');
-const { extractAudioEnvelope, findOptimalSync } = require('./lib/audioAnalyzer');
+const { ANALYSIS_VERSION, extractAudioEnvelope, findOptimalSync } = require('./lib/audioAnalyzer');
 const { probeVideo, streamDirectVideo, streamTranscodedVideo } = require('./lib/videoStreamer');
 
 const app = express();
@@ -21,7 +21,9 @@ app.use(express.static(path.join(__dirname, 'public')));
 const upload = multer({ storage: multer.memoryStorage() });
 
 // In-memory cache for audio analysis of currently opened video
+// Keyed by analysis version so pipeline changes never reuse stale envelopes
 const audioCache = new Map();
+const audioCacheKey = videoPath => `v${ANALYSIS_VERSION}:${videoPath}`;
 
 /**
  * Endpoint: Parse uploaded subtitle file buffer
@@ -128,8 +130,8 @@ app.post('/api/audio/analyze', async (req, res) => {
       return res.status(400).json({ error: '비디오 파일 경로가 유효하지 않습니다.' });
     }
 
-    if (audioCache.has(videoPath)) {
-      const cached = audioCache.get(videoPath);
+    if (audioCache.has(audioCacheKey(videoPath))) {
+      const cached = audioCache.get(audioCacheKey(videoPath));
       return res.json({
         success: true,
         duration: cached.duration,
@@ -139,7 +141,7 @@ app.post('/api/audio/analyze', async (req, res) => {
     }
 
     const analysis = await extractAudioEnvelope(videoPath);
-    audioCache.set(videoPath, analysis);
+    audioCache.set(audioCacheKey(videoPath), analysis);
 
     return res.json({
       success: true,
@@ -165,10 +167,10 @@ app.post('/api/sync/auto', async (req, res) => {
       return res.status(400).json({ error: '자막 목록이 필요합니다.' });
     }
 
-    let audioData = audioCache.get(videoPath);
+    let audioData = audioCache.get(audioCacheKey(videoPath));
     if (!audioData) {
       audioData = await extractAudioEnvelope(videoPath);
-      audioCache.set(videoPath, audioData);
+      audioCache.set(audioCacheKey(videoPath), audioData);
     }
 
     const match = findOptimalSync(audioData.envelope, subtitles);
@@ -182,6 +184,8 @@ app.post('/api/sync/auto', async (req, res) => {
       offset: match.offset,
       confidence: match.confidence,
       pattern: match.pattern,
+      correlation: match.correlation,
+      audioSource: audioData.audioSource,
       driftPer10Min: Number(((match.scale - 1.0) * 600).toFixed(2)),
       syncedItems
     });
