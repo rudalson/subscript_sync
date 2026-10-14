@@ -28,7 +28,8 @@ const subOverlay = document.getElementById('subOverlay');
 const subTextDisplay = document.getElementById('subTextDisplay');
 
 const seekBar = document.getElementById('seekBar');
-const timecodeDisplay = document.getElementById('timecodeDisplay');
+const timecodeCurrent = document.getElementById('timecodeCurrent');
+const timecodeDuration = document.getElementById('timecodeDuration');
 const btnPlayPause = document.getElementById('btnPlayPause');
 const btnStepBack = document.getElementById('btnStepBack');
 const btnStepForward = document.getElementById('btnStepForward');
@@ -70,6 +71,7 @@ const btnDownloadSubtitle = document.getElementById('btnDownloadSubtitle');
 const subTable = document.getElementById('subTable');
 const subTableBody = document.getElementById('subTableBody');
 const subSearchInput = document.getElementById('subSearchInput');
+const subListEmpty = document.getElementById('subListEmpty');
 
 // 2-Point Calibration Tab
 const p1VideoInput = document.getElementById('p1VideoTime');
@@ -111,12 +113,23 @@ const videoFileInput = document.getElementById('videoFileInput');
 const toastContainer = document.getElementById('toastContainer');
 
 /* =========================================================
+   Icons (inline SVG)
+   ========================================================= */
+const ICONS = {
+  play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l12-7.5z"/></svg>',
+  pause: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4h3.5v16H7zM13.5 4H17v16h-3.5z"/></svg>',
+  volHigh: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h3.5L12 5v14l-4.5-4H4z" fill="currentColor"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></svg>',
+  volLow: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h3.5L12 5v14l-4.5-4H4z" fill="currentColor"/><path d="M15.5 9a4 4 0 0 1 0 6"/></svg>',
+  volMute: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h3.5L12 5v14l-4.5-4H4z" fill="currentColor"/><path d="m16 9.5 5 5M21 9.5l-5 5"/></svg>'
+};
+
+/* =========================================================
    Toast Notifications
    ========================================================= */
 function showToast(message, type = 'info') {
   const toast = document.createElement('div');
   toast.className = `toast toast-${type}`;
-  toast.innerHTML = `<span>${type === 'error' ? '❌' : (type === 'success' ? '✅' : 'ℹ️')}</span> <span>${message}</span>`;
+  toast.textContent = message;
   toastContainer.appendChild(toast);
   setTimeout(() => {
     toast.style.opacity = '0';
@@ -145,7 +158,7 @@ btnUndo.addEventListener('click', () => {
   renderSubtitleTable();
   drawWaveform();
   updateUndoRedoButtons();
-  showToast('이전 상태로 되돌렸습니다 (Undo)', 'info');
+  showToast('실행 취소', 'info');
 });
 
 btnRedo.addEventListener('click', () => {
@@ -155,7 +168,7 @@ btnRedo.addEventListener('click', () => {
   renderSubtitleTable();
   drawWaveform();
   updateUndoRedoButtons();
-  showToast('다시 실행했습니다 (Redo)', 'info');
+  showToast('다시 실행', 'info');
 });
 
 /* =========================================================
@@ -181,7 +194,8 @@ function initPlayer() {
     const dur = video.duration || 0;
 
     // Update timecode
-    timecodeDisplay.textContent = `${formatTime(cur)} / ${formatTime(dur)}`;
+    timecodeCurrent.textContent = formatTime(cur);
+    timecodeDuration.textContent = formatTime(dur);
 
     // Update seek bar
     if (dur > 0 && !seekBar.matches(':active')) {
@@ -198,18 +212,21 @@ function initPlayer() {
   video.addEventListener('loadedmetadata', () => {
     videoPlaceholder.style.display = 'none';
     seekBar.value = 0;
-    timecodeDisplay.textContent = `00:00:00.000 / ${formatTime(video.duration)}`;
+    timecodeCurrent.textContent = formatTime(0);
+    timecodeDuration.textContent = formatTime(video.duration);
     drawWaveform();
   });
 
   video.addEventListener('play', () => {
     state.isPlaying = true;
-    btnPlayPause.textContent = '⏸ 일시정지';
+    btnPlayPause.innerHTML = ICONS.pause;
+    btnPlayPause.setAttribute('aria-label', '일시정지');
   });
 
   video.addEventListener('pause', () => {
     state.isPlaying = false;
-    btnPlayPause.textContent = '▶ 재생';
+    btnPlayPause.innerHTML = ICONS.play;
+    btnPlayPause.setAttribute('aria-label', '재생');
   });
 
   btnPlayPause.addEventListener('click', togglePlay);
@@ -270,17 +287,14 @@ function setVolume(val) {
   val = Math.max(0, Math.min(1, val));
   video.volume = val;
   volumeSlider.value = val;
-  volumeValue.textContent = `${Math.round(val * 100)}%`;
+  volumeValue.textContent = String(Math.round(val * 100));
 
   if (val === 0) {
-    btnVolume.textContent = '🔇';
+    btnVolume.innerHTML = ICONS.volMute;
     btnVolume.title = '음소거 해제 (M)';
-  } else if (val < 0.5) {
-    btnVolume.textContent = '🔉';
-    btnVolume.title = '음소거 토글 (M)';
   } else {
-    btnVolume.textContent = '🔊';
-    btnVolume.title = '음소거 토글 (M)';
+    btnVolume.innerHTML = val < 0.5 ? ICONS.volLow : ICONS.volHigh;
+    btnVolume.title = '음소거 (M)';
   }
 }
 
@@ -366,8 +380,16 @@ function renderSubtitleTable() {
     return item.text.toLowerCase().includes(query) || String(item.id).includes(query);
   });
 
-  subCountBadge.textContent = `(${state.subtitles.length}개)`;
-  subMetaInfo.textContent = `${state.subtitles.length}개 항목 | ${state.subMeta ? state.subMeta.format : 'SRT'}`;
+  subCountBadge.textContent = query
+    ? `${state.filteredSubtitles.length} / ${state.subtitles.length}`
+    : String(state.subtitles.length);
+  subMetaInfo.textContent = state.subtitles.length > 0
+    ? `${state.subMeta ? state.subMeta.format : 'SRT'} · ${state.subtitles.length}`
+    : '';
+  subListEmpty.style.display = state.filteredSubtitles.length === 0 ? 'block' : 'none';
+  subListEmpty.textContent = state.subtitles.length === 0
+    ? '자막 파일을 불러오면 여기에 대사가 표시됩니다.'
+    : '검색 결과가 없습니다.';
 
   const fragment = document.createDocumentFragment();
 
@@ -388,8 +410,8 @@ function renderSubtitleTable() {
       <td class="col-dur">${duration}s</td>
       <td class="col-text">${escapeHtml(cleanCueText).replace(/\n/g, '<br>')}</td>
       <td class="col-action">
-        <button class="btn btn-sm btn-p1" title="기준점 1로 지정" data-id="${item.id}">P1</button>
-        <button class="btn btn-sm btn-p2" title="기준점 2로 지정" data-id="${item.id}">P2</button>
+        <button class="btn btn-p1" title="이 자막과 현재 재생 시점을 기준점 1로" data-id="${item.id}">P1</button>
+        <button class="btn btn-p2" title="이 자막과 현재 재생 시점을 기준점 2로" data-id="${item.id}">P2</button>
       </td>
     `;
 
@@ -429,6 +451,7 @@ function selectSubtitle(index) {
   document.querySelectorAll('#subTableBody tr').forEach(row => row.classList.remove('selected'));
   const row = document.getElementById(`sub-row-${index}`);
   if (row) row.classList.add('selected');
+  drawWaveform();
 }
 
 function escapeHtml(str) {
@@ -455,45 +478,85 @@ function drawWaveform() {
   const width = rect.width;
   const height = rect.height;
 
-  ctx.clearRect(0, 0, width, height);
+  const css = getComputedStyle(document.documentElement);
+  const color = name => css.getPropertyValue(name).trim();
 
-  // Background grid
-  ctx.fillStyle = '#0b111e';
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = color('--tl-bg');
   ctx.fillRect(0, 0, width, height);
 
   const duration = video.duration || (state.subtitles.length > 0 ? state.subtitles[state.subtitles.length - 1].end : 0);
   if (!duration) return;
 
-  // Draw Audio Waveform if available
+  // Layout: ruler on top, waveform in the middle, cue lane at the bottom
+  const rulerH = 18;
+  const laneH = 14;
+  const laneY = height - laneH - 6;
+  const waveTop = rulerH + 4;
+  const waveBottom = laneY - 6;
+
+  // Time ruler: pick the smallest tick step that keeps labels >= 72px apart
+  const steps = [5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600];
+  const pxPerSec = width / duration;
+  const step = steps.find(s => s * pxPerSec >= 72) || steps[steps.length - 1];
+
+  ctx.font = `10px ${color('--font-mono')}`;
+  ctx.textBaseline = 'middle';
+  for (let t = 0; t <= duration; t += step) {
+    const x = Math.round(t * pxPerSec) + 0.5;
+    ctx.fillStyle = color('--tl-grid');
+    ctx.fillRect(x, rulerH, 1, height - rulerH);
+    ctx.fillStyle = color('--tl-ruler');
+    ctx.fillRect(x, rulerH - 5, 1, 5);
+    ctx.fillText(formatRulerTime(t), x + 4, rulerH / 2);
+  }
+  ctx.fillStyle = color('--tl-grid');
+  ctx.fillRect(0, rulerH - 0.5, width, 1);
+
+  // Audio waveform
   if (state.waveformOverview && state.waveformOverview.length > 0) {
-    ctx.fillStyle = '#1e3a8a';
+    ctx.fillStyle = color('--tl-wave');
     const numPoints = state.waveformOverview.length;
     const barWidth = width / numPoints;
-    const centerY = height / 2;
+    const centerY = (waveTop + waveBottom) / 2;
+    const maxH = waveBottom - waveTop;
 
     for (let i = 0; i < numPoints; i++) {
-      const val = state.waveformOverview[i];
-      const barHeight = Math.max(1, val * height * 0.85);
-      const x = i * barWidth;
-      ctx.fillRect(x, centerY - barHeight / 2, Math.max(1, barWidth - 0.5), barHeight);
+      const barHeight = Math.max(1, state.waveformOverview[i] * maxH);
+      ctx.fillRect(i * barWidth, centerY - barHeight / 2, Math.max(1, barWidth - 0.5), barHeight);
     }
   }
 
-  // Draw Subtitle dialogue blocks on bottom half
+  // Subtitle cue lane
   if (state.subtitles && state.subtitles.length > 0) {
-    ctx.fillStyle = 'rgba(56, 189, 248, 0.45)';
-    ctx.strokeStyle = '#38bdf8';
-    ctx.lineWidth = 1;
-
+    ctx.fillStyle = color('--tl-cue');
     for (const sub of state.subtitles) {
       const x1 = (sub.start / duration) * width;
-      const x2 = (sub.end / duration) * width;
-      const blockWidth = Math.max(2, x2 - x1);
+      const w = Math.max(1, ((sub.end - sub.start) / duration) * width);
+      ctx.fillRect(x1, laneY, w, laneH);
+    }
 
-      ctx.fillRect(x1, height - 20, blockWidth, 14);
-      ctx.strokeRect(x1, height - 20, blockWidth, 14);
+    // Leading edges make adjacent cues readable at overview zoom
+    ctx.fillStyle = color('--tl-cue-edge');
+    for (const sub of state.subtitles) {
+      ctx.fillRect(Math.round((sub.start / duration) * width), laneY, 1, laneH);
+    }
+
+    const sel = state.subtitles[state.selectedIndex];
+    if (sel) {
+      const x1 = (sel.start / duration) * width;
+      const w = Math.max(2, ((sel.end - sel.start) / duration) * width);
+      ctx.fillStyle = color('--tl-cue-selected');
+      ctx.fillRect(x1, laneY - 2, w, laneH + 4);
     }
   }
+}
+
+function formatRulerTime(sec) {
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = Math.floor(sec % 60);
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
 }
 
 function updatePlayhead(currentTime, duration) {
@@ -525,15 +588,15 @@ function setCalibrationPoint(pointNum, videoTime, subTime, text = '') {
     p1VideoInput.value = formatTime(vTime);
     p1SubInput.value = formatTime(sTime);
     p1Status.textContent = '설정됨';
-    p1Status.style.color = '#10b981';
-    showToast(`기준점 1 지정 완료 (영상: ${formatTime(vTime)}, 자막: ${formatTime(sTime)})`, 'success');
+    p1Status.classList.add('is-set');
+    showToast(`P1 — 영상 ${formatTime(vTime)} · 자막 ${formatTime(sTime)}`, 'success');
   } else {
     state.p2 = { videoTime: vTime, subTime: sTime };
     p2VideoInput.value = formatTime(vTime);
     p2SubInput.value = formatTime(sTime);
     p2Status.textContent = '설정됨';
-    p2Status.style.color = '#10b981';
-    showToast(`기준점 2 지정 완료 (영상: ${formatTime(vTime)}, 자막: ${formatTime(sTime)})`, 'success');
+    p2Status.classList.add('is-set');
+    showToast(`P2 — 영상 ${formatTime(vTime)} · 자막 ${formatTime(sTime)}`, 'success');
   }
 
   calculateTwoPoint();
@@ -549,11 +612,12 @@ function calculateTwoPoint() {
 
   const subDiff = s2 - s1;
   if (Math.abs(subDiff) < 0.1) {
-    twoPointPattern.textContent = '두 기준점의 자막 시간 차이가 너무 작습니다';
-    twoPointPattern.style.color = '#ef4444';
+    twoPointPattern.textContent = '두 기준점의 자막 시점이 너무 가깝습니다';
+    twoPointPattern.classList.add('is-error');
     btnApplyTwoPoint.disabled = true;
     return;
   }
+  twoPointPattern.classList.remove('is-error');
 
   const scale = (v2 - v1) / subDiff;
   const offset = v1 - (scale * s1);
@@ -564,15 +628,15 @@ function calculateTwoPoint() {
   twoPointDrift.textContent = `${drift10Min >= 0 ? '+' : ''}${drift10Min.toFixed(2)}s`;
 
   // Pattern detection
-  let patternText = '사용자 정의 배율';
+  let patternText = '알려진 프레임레이트 패턴 아님';
   if (Math.abs(scale - (25 / 23.976)) < 0.005) {
-    patternText = 'PAL (25fps) → NTSC (23.976fps) [약 +4.27%]';
+    patternText = 'PAL 25 → NTSC 23.976 (+4.27%)';
   } else if (Math.abs(scale - (23.976 / 25)) < 0.005) {
-    patternText = 'NTSC (23.976fps) → PAL (25fps) [약 -4.10%]';
+    patternText = 'NTSC 23.976 → PAL 25 (−4.10%)';
   } else if (Math.abs(scale - (24 / 23.976)) < 0.002) {
-    patternText = 'Film (24fps) → NTSC (23.976fps) [약 +0.1%]';
+    patternText = 'Film 24 → NTSC 23.976 (+0.1%)';
   } else if (Math.abs(scale - 1.0) < 0.0005) {
-    patternText = '동일 프레임레이트 (순수 지연 오프셋)';
+    patternText = '속도 동일 — 지연만 있음';
   }
   twoPointPattern.textContent = patternText;
   btnApplyTwoPoint.disabled = false;
@@ -592,7 +656,7 @@ btnSetP1Sub.addEventListener('click', () => {
     state.p1.subTime = Number(sub.start.toFixed(3));
     calculateTwoPoint();
   } else {
-    showToast('자막 목록에서 기준점이 될 자막을 먼저 클릭하세요.', 'error');
+    showToast('목록에서 기준이 될 자막을 먼저 선택하세요.', 'error');
   }
 });
 
@@ -609,7 +673,7 @@ btnSetP2Sub.addEventListener('click', () => {
     state.p2.subTime = Number(sub.start.toFixed(3));
     calculateTwoPoint();
   } else {
-    showToast('자막 목록에서 기준점이 될 자막을 먼저 클릭하세요.', 'error');
+    showToast('목록에서 기준이 될 자막을 먼저 선택하세요.', 'error');
   }
 });
 
@@ -629,9 +693,9 @@ btnApplyTwoPoint.addEventListener('click', async () => {
 
     renderSubtitleTable();
     drawWaveform();
-    showToast(`2포인트 비례 싱크가 성공적으로 적용되었습니다! (배율: ${scale}, 오프셋: ${offset}s)`, 'success');
+    showToast(`2점 보정 적용 — 배율 ${scale}, 오프셋 ${offset}s`, 'success');
   } catch (err) {
-    showToast(`2포인트 싱크 적용 실패: ${err.message}`, 'error');
+    showToast(`2점 보정 실패: ${err.message}`, 'error');
   }
 });
 
@@ -653,7 +717,7 @@ function applyQuickShift(deltaSec) {
 
   renderSubtitleTable();
   drawWaveform();
-  showToast(`자막 싱크 ${deltaSec >= 0 ? '+' : ''}${deltaSec.toFixed(1)}s 조정되었습니다.`, 'info');
+  showToast(`전체 ${deltaSec >= 0 ? '+' : ''}${deltaSec.toFixed(1)}s`, 'info');
 }
 
 document.querySelectorAll('[data-shift]').forEach(btn => {
@@ -676,14 +740,15 @@ btnResetOffset.addEventListener('click', () => {
    ========================================================= */
 btnRunAutoSync.addEventListener('click', async () => {
   if (!state.videoMeta || !state.videoMeta.path) {
-    return showToast('비디오 파일이 먼저 로드되어 있어야 합니다.', 'error');
+    return showToast('동영상을 먼저 경로로 불러오세요.', 'error');
   }
   if (!state.subtitles || state.subtitles.length === 0) {
-    return showToast('자막 파일이 먼저 로드되어 있어야 합니다.', 'error');
+    return showToast('자막을 먼저 불러오세요.', 'error');
   }
 
   btnRunAutoSync.disabled = true;
-  autoSyncProgressText.textContent = '⏳ 오디오 분석 및 싱크 정렬 계산 중... (수 초 소요)';
+  autoSyncProgressText.classList.remove('is-error');
+  autoSyncProgressText.textContent = '오디오 분석 중… 몇 초 걸립니다';
 
   try {
     const res = await fetch('/api/sync/auto', {
@@ -705,11 +770,12 @@ btnRunAutoSync.addEventListener('click', async () => {
     autoPattern.textContent = data.pattern;
 
     autoSyncResultBox.style.display = 'flex';
-    autoSyncProgressText.textContent = '✅ 자동 분석 완료!';
-    showToast(`자동 싱크 분석 완료 (신뢰도: ${data.confidence}%, 배율: ${data.scale})`, 'success');
+    autoSyncProgressText.textContent = '분석 완료';
+    showToast(`자동 정렬 분석 완료 — 신뢰도 ${data.confidence}%`, 'success');
   } catch (err) {
-    autoSyncProgressText.textContent = '❌ 분석 실패';
-    showToast(`자동 싱크 분석 실패: ${err.message}`, 'error');
+    autoSyncProgressText.classList.add('is-error');
+    autoSyncProgressText.textContent = '분석 실패';
+    showToast(`자동 정렬 분석 실패: ${err.message}`, 'error');
   } finally {
     btnRunAutoSync.disabled = false;
   }
@@ -722,7 +788,7 @@ btnApplyAutoSync.addEventListener('click', () => {
   state.subtitles = state.autoSyncResult.syncedItems;
   renderSubtitleTable();
   drawWaveform();
-  showToast('자동 음성 싱크 결과가 성공적으로 적용되었습니다!', 'success');
+  showToast('자동 정렬 결과 적용', 'success');
 });
 
 /* =========================================================
@@ -735,7 +801,7 @@ function applySegmentShift(delta) {
   let startIdx = 0;
   if (mode === 'selectedToEnd') {
     if (state.selectedIndex < 0) {
-      return showToast('적용을 시작할 자막을 목록에서 먼저 선택하세요.', 'error');
+      return showToast('시작할 자막을 목록에서 먼저 선택하세요.', 'error');
     }
     startIdx = state.selectedIndex;
   }
@@ -749,7 +815,7 @@ function applySegmentShift(delta) {
 
   renderSubtitleTable();
   drawWaveform();
-  showToast(`#${startIdx + 1}부터 끝까지 ${delta >= 0 ? '+' : ''}${delta.toFixed(1)}s 조정 완료!`, 'success');
+  showToast(`#${startIdx + 1}부터 ${delta >= 0 ? '+' : ''}${delta.toFixed(1)}s`, 'success');
 }
 
 document.getElementById('btnSegShiftMinus1').addEventListener('click', () => applySegmentShift(-1.0));
@@ -785,7 +851,7 @@ document.querySelectorAll('[data-fps]').forEach(btn => {
 
     renderSubtitleTable();
     drawWaveform();
-    showToast(`프레임레이트 변환 비율(×${scale.toFixed(4)})이 적용되었습니다.`, 'success');
+    showToast(`FPS 변환 ×${scale.toFixed(4)} 적용`, 'success');
   });
 });
 
@@ -846,21 +912,23 @@ document.getElementById('btnConfirmLoad').addEventListener('click', async () => 
         state.subMeta = data.subtitle;
         state.subtitles = data.subtitle.items;
         subFilename.textContent = data.subtitle.filename;
+        subStatusChip.classList.add('is-loaded');
         renderSubtitleTable();
-        showToast(`자막 로드 완료 (${data.subtitle.format}, ${data.subtitle.count}개 대사)`, 'success');
+        showToast(`자막 ${data.subtitle.count}개 불러옴 · ${data.subtitle.format}`, 'success');
       }
 
       if (data.video) {
         state.videoMeta = data.video;
         videoFilename.textContent = data.video.filename;
+        videoStatusChip.classList.add('is-loaded');
         video.src = `/api/stream/video?path=${encodeURIComponent(data.video.path)}`;
         loadAudioWaveform(data.video.path);
-        showToast(`동영상 로드 완료 (${data.video.vCodec} / ${data.video.aCodec})`, 'success');
+        showToast(`동영상 불러옴 · ${data.video.vCodec} / ${data.video.aCodec}`, 'success');
       }
 
       fileModal.style.display = 'none';
     } catch (err) {
-      showToast(`파일 로드 오류: ${err.message}`, 'error');
+      showToast(`불러오기 실패: ${err.message}`, 'error');
     }
   }
 });
@@ -871,8 +939,9 @@ function loadVideoFileDirectly(file) {
     isDirectPlayable: true
   };
   videoFilename.textContent = file.name;
+  videoStatusChip.classList.add('is-loaded');
   video.src = URL.createObjectURL(file);
-  showToast(`동영상 파일 선택: ${file.name}`, 'info');
+  showToast(`동영상 · ${file.name}`, 'info');
 }
 
 async function loadSubtitleFileDirectly(file) {
@@ -894,11 +963,12 @@ async function loadSubtitleFileDirectly(file) {
     };
     state.subtitles = data.items;
     subFilename.textContent = data.filename;
+    subStatusChip.classList.add('is-loaded');
     renderSubtitleTable();
     drawWaveform();
-    showToast(`자막 로드 완료 (${data.format}, ${data.encoding}, ${data.count}개 대사)`, 'success');
+    showToast(`자막 ${data.count}개 불러옴 · ${data.format} · ${data.encoding}`, 'success');
   } catch (err) {
-    showToast(`자막 업로드 오류: ${err.message}`, 'error');
+    showToast(`자막 불러오기 실패: ${err.message}`, 'error');
   }
 }
 
@@ -980,7 +1050,7 @@ document.getElementById('btnConfirmSave').addEventListener('click', async () => 
     if (!data.success) throw new Error(data.error);
 
     saveModal.style.display = 'none';
-    showToast(`자막 저장 완료: ${data.savedPath}`, 'success');
+    showToast(`저장됨 · ${data.savedPath}`, 'success');
   } catch (err) {
     showToast(`저장 실패: ${err.message}`, 'error');
   }
@@ -1010,7 +1080,7 @@ btnDownloadSubtitle.addEventListener('click', async () => {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    showToast('보정된 자막 파일 다운로드가 시작되었습니다.', 'success');
+    showToast('다운로드 시작', 'success');
   } catch (err) {
     showToast(`다운로드 실패: ${err.message}`, 'error');
   }
@@ -1119,7 +1189,7 @@ function initSubtitleFontSize() {
   if (subFontSizeSelect) {
     subFontSizeSelect.addEventListener('change', () => {
       setSubtitleFontSize(subFontSizeSelect.value);
-      showToast(`자막 크기: ${Math.round(parseFloat(subFontSizeSelect.value) * 100)}%`, 'info');
+      showToast(`자막 글자 ${Math.round(parseFloat(subFontSizeSelect.value) * 100)}%`, 'info');
     });
   }
 }
