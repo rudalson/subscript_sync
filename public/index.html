@@ -209,6 +209,16 @@
       <div class="tab-content" id="tabAutoSync">
         <p class="hint">FFmpeg로 오디오의 발화 구간을 찾아 자막 타이밍과 맞춰 봅니다. 서버 경로로 불러온 영상에서만 동작합니다.</p>
 
+        <label class="check">
+          <input type="checkbox" id="segmentAlignCheckbox" checked>
+          <span>구간별 정렬 <em>릴리스 간 오프닝·컷 차이로 중간에 밀리는 지점을 찾아 구간마다 따로 맞춥니다</em></span>
+        </label>
+
+        <label class="check">
+          <input type="checkbox" id="refineCuesCheckbox" checked>
+          <span>대사별 미세 조정 <em>전체 정렬 후 각 대사 시작을 ±1.5초 안의 실제 발화 시작에 맞춥니다</em></span>
+        </label>
+
         <div class="action-line">
           <button class="btn btn-primary" id="btnRunAutoSync">분석 시작</button>
           <span class="status-text" id="autoSyncProgressText"></span>
@@ -220,6 +230,7 @@
             <div><dt>배율</dt><dd id="autoScale">1.000000</dd></div>
             <div><dt>오프셋</dt><dd id="autoOffset">0.000s</dd></div>
           </dl>
+          <p class="hint" id="autoRefineInfo" style="display: none;"></p>
           <div class="result-foot">
             <span class="pattern" id="autoPattern">-</span>
             <button class="btn btn-primary" id="btnApplyAutoSync">적용</button>

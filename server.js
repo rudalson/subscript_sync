@@ -7,6 +7,8 @@ const { decodeSubtitleBuffer, parseSubtitle } = require('./lib/subtitleParser');
 const { serializeSubtitle } = require('./lib/subtitleSerializer');
 const { calculateTwoPointParameters, applyLinearSync, applyShiftOffset, identifyFpsPattern } = require('./lib/syncEngine');
 const { ANALYSIS_VERSION, extractAudioEnvelope, findOptimalSync } = require('./lib/audioAnalyzer');
+const { refineCueTimings } = require('./lib/cueRefiner');
+const { alignSegments } = require('./lib/segmentAligner');
 const { probeVideo, streamDirectVideo, streamTranscodedVideo } = require('./lib/videoStreamer');
 const { resolveLocalFile, openNativeFileDialog } = require('./lib/fileLocator');
 
@@ -164,7 +166,7 @@ app.post('/api/audio/analyze', async (req, res) => {
  */
 app.post('/api/sync/auto', async (req, res) => {
   try {
-    let { videoPath, subtitles } = req.body;
+    let { videoPath, subtitles, segmentAlign = true, refineCues = true } = req.body;
     videoPath = resolveLocalFile(videoPath);
     if (!videoPath || !fs.existsSync(videoPath)) {
       return res.status(400).json({ error: '비디오 파일 경로가 필요합니다.' });
@@ -179,10 +181,22 @@ app.post('/api/sync/auto', async (req, res) => {
       audioCache.set(audioCacheKey(videoPath), audioData);
     }
 
-    const match = findOptimalSync(audioData.envelope, subtitles);
+    const match = findOptimalSync(audioData.envelope, subtitles, { vad: audioData.vad });
 
-    // Apply match to items
-    const syncedItems = applyLinearSync(subtitles, match.scale, match.offset);
+    // Apply match to items, then optionally correct per-segment jumps and snap each cue to speech onsets
+    let syncedItems = applyLinearSync(subtitles, match.scale, match.offset);
+    let segments = null;
+    if (segmentAlign) {
+      const aligned = alignSegments(syncedItems, audioData.vad);
+      syncedItems = aligned.items;
+      segments = aligned.segments;
+    }
+    let refineStats = null;
+    if (refineCues) {
+      const refined = refineCueTimings(syncedItems, audioData.vad, { speechProb: audioData.speechProb });
+      syncedItems = refined.items;
+      refineStats = refined.stats;
+    }
 
     return res.json({
       success: true,
@@ -192,6 +206,9 @@ app.post('/api/sync/auto', async (req, res) => {
       pattern: match.pattern,
       correlation: match.correlation,
       audioSource: audioData.audioSource,
+      vadSource: audioData.vadSource,
+      segments,
+      refineStats,
       driftPer10Min: Number(((match.scale - 1.0) * 600).toFixed(2)),
       syncedItems
     });

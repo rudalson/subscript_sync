@@ -4,7 +4,10 @@ const iconv = require('iconv-lite');
 const { parseSubtitle, decodeSubtitleBuffer, parseSRT, parseSMI, parseVTT } = require('../lib/subtitleParser');
 const { serializeSubtitle, toSRT, toSMI, toVTT } = require('../lib/subtitleSerializer');
 const { calculateTwoPointParameters, applyLinearSync, applyShiftOffset, identifyFpsPattern } = require('../lib/syncEngine');
-const { computeVAD, findOptimalSync } = require('../lib/audioAnalyzer');
+const { computeVAD, computeNeuralVAD, findOptimalSync } = require('../lib/audioAnalyzer');
+const { createSileroStream } = require('../lib/neuralVad');
+const { refineCueTimings } = require('../lib/cueRefiner');
+const { alignSegments } = require('../lib/segmentAligner');
 
 console.log('🧪 SubSync Studio 테스트 시작...');
 
@@ -121,4 +124,74 @@ assert(Math.abs(autoMatch.offset - 5.0) <= 0.2);
 assert(Math.abs(autoMatch.scale - 1.0) <= 0.01);
 console.log('  ✅ 자동 교차상관 싱크 탐색 성공 (오프셋 5.0s 정확히 검출)!');
 
-console.log('🎉 모든 핵심 기능 테스트 통과!');
+// Test 5: Neural VAD probability -> binary speech with hysteresis
+console.log('5. 신경망 VAD 확률 → 음성 구간 변환 테스트');
+const probs = new Float32Array([0.1, 0.6, 0.4, 0.4, 0.2, 0.1, 0.1, 0.1, 0.1, 0.9, 0.1, 0.1, 0.1, 0.1]);
+const neuralVad = computeNeuralVAD(probs);
+assert.deepStrictEqual(Array.from(neuralVad.subarray(0, 5)), [0, 1, 1, 1, 0]); // 0.4 stays on (hysteresis)
+assert.strictEqual(neuralVad[9], 0); // isolated 100ms blip removed
+console.log('  ✅ 히스테리시스 및 짧은 잡음 제거 성공!');
+
+// Test 6: Per-cue refinement snaps starts to nearby speech onsets
+console.log('6. 대사별 미세 조정 테스트');
+{
+  const vad7 = new Uint8Array(400); // 40s at 10 buckets/sec
+  const speak = (from, to) => vad7.fill(1, from * 10, to * 10);
+  speak(5.4, 7.5);   // cue 1 speech starts 0.4s later than subtitle
+  speak(10.3, 12);   // cue 2 starts 0.3s later
+  speak(15.5, 17);   // cue 3 starts 0.5s later
+  const cues = [
+    { id: 1, start: 5.0, end: 7.0, text: 'a' },
+    { id: 2, start: 10.0, end: 11.5, text: 'b' },
+    { id: 3, start: 15.0, end: 16.5, text: 'c' },
+    { id: 4, start: 30.0, end: 31.0, text: 'd' } // no speech nearby -> follows neighbors
+  ];
+  const { items: refinedCues, stats } = refineCueTimings(cues, vad7);
+  assert.strictEqual(refinedCues[0].start, 5.4);
+  assert.strictEqual(refinedCues[1].start, 10.3);
+  assert.strictEqual(refinedCues[2].start, 15.5);
+  assert(Math.abs(refinedCues[0].end - refinedCues[0].start - 2.0) < 1e-9); // duration kept
+  assert.strictEqual(stats.snapped, 3);
+  assert.strictEqual(stats.followed, 1);
+  assert(refinedCues[3].start > 30.0 && refinedCues[3].start < 30.6);
+  console.log('  ✅ 발화 시작 스냅 및 주변 흐름 추종 성공!');
+}
+
+// Test 7: Segment alignment detects an offset jump (e.g. longer title sequence in another release)
+console.log('7. 구간별 정렬 (분할 지점 검출) 테스트');
+{
+  const durationSec = 1200;
+  const vad8 = new Uint8Array(durationSec * 10);
+  const cues8 = [];
+  for (let i = 0; i < 100; i++) {
+    const subStart = 20 + i * 11;                 // subtitle timeline
+    const jump = subStart >= 500 ? 4.0 : 0;        // video gains 4s after the 500s mark
+    const speechStart = subStart + jump;
+    vad8.fill(1, Math.round(speechStart * 10), Math.round((speechStart + 2.5) * 10));
+    cues8.push({ id: i + 1, start: subStart, end: subStart + 2.5, text: String(i) });
+  }
+  const aligned = alignSegments(cues8, vad8);
+  assert.strictEqual(aligned.stats.splits, 1);
+  assert(Math.abs(aligned.items[10].start - cues8[10].start) < 0.2);       // before the cut: unchanged
+  assert(Math.abs(aligned.items[80].start - (cues8[80].start + 4)) < 0.2); // after the cut: +4s
+  console.log('  ✅ 분할 지점 1개 검출 및 구간별 오프셋 보정 성공!');
+}
+
+(async () => {
+  // Test 8: Silero model inference on silence (skipped when the model/runtime is unavailable)
+  console.log('8. Silero VAD 추론 테스트');
+  const silero = await createSileroStream();
+  if (!silero) {
+    console.log('  ⚠️ Silero VAD 사용 불가 — 건너뜀');
+  } else {
+    await silero.push(new Float32Array(16000 * 3));
+    const frameProbs = await silero.finish();
+    assert(frameProbs.length >= 90);
+    assert(Math.max(...frameProbs) < 0.5);
+    console.log('  ✅ 무음 구간을 비음성으로 판정 성공!');
+  }
+  console.log('🎉 모든 핵심 기능 테스트 통과!');
+})().catch(err => {
+  console.error(err);
+  process.exit(1);
+});

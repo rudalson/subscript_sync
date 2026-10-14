@@ -826,6 +826,11 @@ video {
   border-radius: var(--r);
 }
 
+.result .hint {
+  padding: 8px 10px;
+  border-top: 1px solid var(--line);
+}
+
 .readout {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

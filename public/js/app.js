@@ -98,6 +98,9 @@ const autoConfidence = document.getElementById('autoConfidence');
 const autoScale = document.getElementById('autoScale');
 const autoOffset = document.getElementById('autoOffset');
 const autoPattern = document.getElementById('autoPattern');
+const autoRefineInfo = document.getElementById('autoRefineInfo');
+const refineCuesCheckbox = document.getElementById('refineCuesCheckbox');
+const segmentAlignCheckbox = document.getElementById('segmentAlignCheckbox');
 const btnApplyAutoSync = document.getElementById('btnApplyAutoSync');
 
 // Segment Sync Tab
@@ -793,7 +796,7 @@ btnRunAutoSync.addEventListener('click', async () => {
 
   btnRunAutoSync.disabled = true;
   autoSyncProgressText.classList.remove('is-error');
-  autoSyncProgressText.textContent = '오디오 분석 중… 몇 초 걸립니다';
+  autoSyncProgressText.textContent = '오디오 분석 중… 신경망 음성 감지로 영화 1편 기준 30초가량 걸립니다';
 
   try {
     const res = await fetch('/api/sync/auto', {
@@ -801,7 +804,9 @@ btnRunAutoSync.addEventListener('click', async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         videoPath: state.videoMeta.path,
-        subtitles: state.subtitles
+        subtitles: state.subtitles,
+        segmentAlign: segmentAlignCheckbox.checked,
+        refineCues: refineCuesCheckbox.checked
       })
     });
 
@@ -813,10 +818,30 @@ btnRunAutoSync.addEventListener('click', async () => {
     autoScale.textContent = data.scale.toFixed(6);
     autoOffset.textContent = `${data.offset >= 0 ? '+' : ''}${data.offset.toFixed(3)}s`;
     autoPattern.textContent = data.pattern;
+    const infoLines = [];
+    if (data.segments) {
+      const splits = data.segments.slice(1).map(seg => {
+        const t = Math.max(0, seg.startTime);
+        const mm = String(Math.floor(t / 60)).padStart(2, '0');
+        const ss = String(Math.floor(t % 60)).padStart(2, '0');
+        return `${mm}:${ss}(#${seg.fromIndex + 1})`;
+      });
+      const offsets = data.segments.map(seg => `${seg.offset >= 0 ? '+' : ''}${seg.offset.toFixed(1)}s`);
+      infoLines.push(splits.length > 0
+        ? `구간별 정렬: 분할 지점 ${splits.length}개 · ${splits.join(', ')} · 구간 보정 ${offsets.join(' → ')}`
+        : `구간별 정렬: 분할 지점 없음 · 구간 보정 ${offsets[0]}`);
+    }
+    if (data.refineStats) {
+      const { snapped, followed, medianShift } = data.refineStats;
+      infoLines.push(`미세 조정: ${snapped}줄 발화 시작에 맞춤 · ${followed}줄 주변 흐름 따름 · 이동량 중앙값 ${medianShift.toFixed(2)}s`);
+    }
+    autoRefineInfo.innerHTML = infoLines.map(escapeHtml).join('<br>');
+    autoRefineInfo.style.display = infoLines.length > 0 ? '' : 'none';
 
     autoSyncResultBox.style.display = 'flex';
     autoSyncProgressText.textContent = '분석 완료';
-    showToast(`자동 정렬 분석 완료 — 신뢰도 ${data.confidence}%`, 'success');
+    const vadLabel = data.vadSource === 'silero' ? '신경망 음성 감지' : '에너지 기반 음성 감지';
+    showToast(`자동 정렬 분석 완료 — 신뢰도 ${data.confidence}% · ${vadLabel}`, 'success');
   } catch (err) {
     autoSyncProgressText.classList.add('is-error');
     autoSyncProgressText.textContent = '분석 실패';
