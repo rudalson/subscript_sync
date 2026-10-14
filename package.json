@@ -2,7 +2,7 @@
   "name": "subscript_sync",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "test": "node test/test_sync.js"
@@ -15,5 +15,8 @@
     "jschardet": "^4.0.0",
     "multer": "^2.4.0",
     "onnxruntime-node": "^1.30.0"
+  },
+  "allowScripts": {
+    "onnxruntime-node": false
   }
 }

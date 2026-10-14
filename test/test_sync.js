@@ -118,7 +118,7 @@ const testSubs = [
   { start: 200, end: 203 }
 ];
 
-const autoMatch = findOptimalSync(testEnvelope, testSubs, { minOffset: -10, maxOffset: 10, offsetStep: 0.5 });
+const autoMatch = findOptimalSync(testEnvelope, testSubs, { minOffset: -10, maxOffset: 10 });
 console.log('  자동 탐색 결과:', autoMatch);
 assert(Math.abs(autoMatch.offset - 5.0) <= 0.2);
 assert(Math.abs(autoMatch.scale - 1.0) <= 0.01);

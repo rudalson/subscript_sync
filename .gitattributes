@@ -1,0 +1,5 @@
+# Store and check out text files with LF so line endings stay consistent across editors/OSes
+* text=auto eol=lf
+
+# Binary assets
+*.onnx binary

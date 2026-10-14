@@ -5,7 +5,7 @@ const multer = require('multer');
 
 const { decodeSubtitleBuffer, parseSubtitle } = require('./lib/subtitleParser');
 const { serializeSubtitle } = require('./lib/subtitleSerializer');
-const { calculateTwoPointParameters, applyLinearSync, applyShiftOffset, identifyFpsPattern } = require('./lib/syncEngine');
+const { applyLinearSync } = require('./lib/syncEngine');
 const { ANALYSIS_VERSION, extractAudioEnvelope, findOptimalSync } = require('./lib/audioAnalyzer');
 const { refineCueTimings } = require('./lib/cueRefiner');
 const { alignSegments } = require('./lib/segmentAligner');
@@ -19,6 +19,11 @@ const PORT = process.env.PORT || 4200;
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Share the sync engine with the browser so both sides use the same presets and math
+app.get('/js/syncEngine.js', (req, res) => {
+  res.sendFile(path.join(__dirname, 'lib', 'syncEngine.js'));
+});
 
 // Configure Multer for in-memory or temp storage
 const upload = multer({ storage: multer.memoryStorage() });
@@ -267,56 +272,6 @@ app.post('/api/browse/native', async (req, res) => {
       path: selectedPath,
       filename: path.basename(selectedPath),
       ...info
-    });
-  } catch (err) {
-    return res.status(500).json({ error: err.message });
-  }
-});
-
-/**
- * Endpoint: Calculate 2-point linear parameters and preview
- */
-app.post('/api/sync/twopoint', (req, res) => {
-  try {
-    const { p1, p2, items, range } = req.body;
-    if (!p1 || !p2) {
-      return res.status(400).json({ error: '기준점 1과 기준점 2가 필요합니다.' });
-    }
-
-    const params = calculateTwoPointParameters(p1, p2);
-    let syncedItems = null;
-
-    if (items && Array.isArray(items)) {
-      syncedItems = applyLinearSync(items, params.scale, params.offset, range);
-    }
-
-    return res.json({
-      success: true,
-      ...params,
-      syncedItems
-    });
-  } catch (err) {
-    return res.status(400).json({ error: err.message });
-  }
-});
-
-/**
- * Endpoint: Apply custom scale and offset
- */
-app.post('/api/sync/apply', (req, res) => {
-  try {
-    const { items, scale, offset, range } = req.body;
-    if (!items || !Array.isArray(items)) {
-      return res.status(400).json({ error: '자막 목록이 필요합니다.' });
-    }
-
-    const s = scale !== undefined ? Number(scale) : 1.0;
-    const o = offset !== undefined ? Number(offset) : 0.0;
-    const syncedItems = applyLinearSync(items, s, o, range);
-
-    return res.json({
-      success: true,
-      syncedItems
     });
   } catch (err) {
     return res.status(500).json({ error: err.message });

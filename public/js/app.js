@@ -13,6 +13,7 @@ const state = {
   selectedIndex: -1,
   p1: { videoTime: null, subTime: null },
   p2: { videoTime: null, subTime: null },
+  twoPointParams: null,
   totalOffset: 0,
   waveformOverview: [],
   autoSyncResult: null,
@@ -56,7 +57,6 @@ const videoStatusChip = document.getElementById('videoStatusChip');
 const subStatusChip = document.getElementById('subStatusChip');
 const videoFilename = document.getElementById('videoFilename');
 const subFilename = document.getElementById('subFilename');
-const subMetaInfo = document.getElementById('subMetaInfo');
 const subCountBadge = document.getElementById('subCountBadge');
 const subFontSizeSelect = document.getElementById('subFontSizeSelect');
 
@@ -386,11 +386,6 @@ function renderSubtitleTable() {
   subCountBadge.textContent = query
     ? `${state.filteredSubtitles.length} / ${state.subtitles.length}`
     : String(state.subtitles.length);
-  if (subMetaInfo) {
-    subMetaInfo.textContent = state.subtitles.length > 0
-      ? `${state.subMeta ? state.subMeta.format : 'SRT'} · ${state.subtitles.length}`
-      : '';
-  }
   if (subStatusChip && state.subMeta) {
     subStatusChip.title = `${state.subMeta.filename} (${state.subMeta.format || 'SRT'}, ${state.subtitles.length}개 대사)`;
   }
@@ -611,42 +606,27 @@ function setCalibrationPoint(pointNum, videoTime, subTime, text = '') {
 }
 
 function calculateTwoPoint() {
-  if (state.p1.videoTime === null || state.p2.videoTime === null) return;
+  const points = [state.p1.videoTime, state.p1.subTime, state.p2.videoTime, state.p2.subTime];
+  if (points.some(t => t === null)) return;
 
-  const s1 = state.p1.subTime;
-  const v1 = state.p1.videoTime;
-  const s2 = state.p2.subTime;
-  const v2 = state.p2.videoTime;
-
-  const subDiff = s2 - s1;
-  if (Math.abs(subDiff) < 0.1) {
-    twoPointPattern.textContent = '두 기준점의 자막 시점이 너무 가깝습니다';
+  let params;
+  try {
+    params = SyncEngine.calculateTwoPointParameters(state.p1, state.p2);
+  } catch (err) {
+    state.twoPointParams = null;
+    twoPointPattern.textContent = err.message;
     twoPointPattern.classList.add('is-error');
     btnApplyTwoPoint.disabled = true;
     return;
   }
   twoPointPattern.classList.remove('is-error');
 
-  const scale = (v2 - v1) / subDiff;
-  const offset = v1 - (scale * s1);
-  const drift10Min = (scale - 1.0) * 600;
-
+  const { scale, offset, driftPer10Min, pattern } = params;
+  state.twoPointParams = params;
   twoPointScale.textContent = scale.toFixed(6);
   twoPointOffset.textContent = `${offset >= 0 ? '+' : ''}${offset.toFixed(3)}s`;
-  twoPointDrift.textContent = `${drift10Min >= 0 ? '+' : ''}${drift10Min.toFixed(2)}s`;
-
-  // Pattern detection
-  let patternText = '알려진 프레임레이트 패턴 아님';
-  if (Math.abs(scale - (25 / 23.976)) < 0.005) {
-    patternText = 'PAL 25 → NTSC 23.976 (+4.27%)';
-  } else if (Math.abs(scale - (23.976 / 25)) < 0.005) {
-    patternText = 'NTSC 23.976 → PAL 25 (−4.10%)';
-  } else if (Math.abs(scale - (24 / 23.976)) < 0.002) {
-    patternText = 'Film 24 → NTSC 23.976 (+0.1%)';
-  } else if (Math.abs(scale - 1.0) < 0.0005) {
-    patternText = '속도 동일 — 지연만 있음';
-  }
-  twoPointPattern.textContent = patternText;
+  twoPointDrift.textContent = `${driftPer10Min >= 0 ? '+' : ''}${driftPer10Min.toFixed(2)}s`;
+  twoPointPattern.textContent = pattern;
   btnApplyTwoPoint.disabled = false;
 }
 
@@ -688,16 +668,11 @@ btnSetP2Sub.addEventListener('click', () => {
 // Apply 2-Point Sync
 btnApplyTwoPoint.addEventListener('click', async () => {
   try {
-    const scale = parseFloat(twoPointScale.textContent);
-    const offset = parseFloat(twoPointOffset.textContent);
+    if (!state.twoPointParams) return;
+    const { scale, offset } = state.twoPointParams;
 
     pushHistory();
-
-    state.subtitles = state.subtitles.map(item => ({
-      ...item,
-      start: Number(Math.max(0, scale * item.start + offset).toFixed(3)),
-      end: Number(Math.max(0.1, scale * item.end + offset).toFixed(3))
-    }));
+    state.subtitles = SyncEngine.applyLinearSync(state.subtitles, scale, offset);
 
     renderSubtitleTable();
     drawWaveform();
@@ -717,11 +692,7 @@ function applyQuickShift(deltaSec) {
   state.totalOffset += deltaSec;
   totalOffsetBadge.textContent = `${state.totalOffset >= 0 ? '+' : ''}${state.totalOffset.toFixed(3)}s`;
 
-  state.subtitles = state.subtitles.map(item => ({
-    ...item,
-    start: Number(Math.max(0, item.start + deltaSec).toFixed(3)),
-    end: Number(Math.max(0.1, item.end + deltaSec).toFixed(3))
-  }));
+  state.subtitles = SyncEngine.applyShiftOffset(state.subtitles, deltaSec);
 
   renderSubtitleTable();
   drawWaveform();
@@ -877,11 +848,7 @@ function applySegmentShift(delta) {
   }
 
   pushHistory();
-  for (let i = startIdx; i < state.subtitles.length; i++) {
-    const item = state.subtitles[i];
-    item.start = Number(Math.max(0, item.start + delta).toFixed(3));
-    item.end = Number(Math.max(0.1, item.end + delta).toFixed(3));
-  }
+  state.subtitles = SyncEngine.applyShiftOffset(state.subtitles, delta, { startIndex: startIdx });
 
   renderSubtitleTable();
   drawWaveform();
@@ -905,19 +872,12 @@ btnApplySegCustom.addEventListener('click', () => {
    ========================================================= */
 document.querySelectorAll('[data-fps]').forEach(btn => {
   btn.addEventListener('click', () => {
-    const type = btn.getAttribute('data-fps');
-    let scale = 1.0;
-    if (type === 'pal-to-ntsc') scale = 25 / 23.976;
-    else if (type === 'ntsc-to-pal') scale = 23.976 / 25;
-    else if (type === 'film-to-ntsc') scale = 24 / 23.976;
-    else if (type === 'ntsc-to-film') scale = 23.976 / 24;
+    const preset = SyncEngine.FPS_PRESETS.find(p => p.id === btn.getAttribute('data-fps'));
+    if (!preset) return;
+    const scale = preset.ratio;
 
     pushHistory();
-    state.subtitles = state.subtitles.map(item => ({
-      ...item,
-      start: Number((item.start * scale).toFixed(3)),
-      end: Number((item.end * scale).toFixed(3))
-    }));
+    state.subtitles = SyncEngine.applyLinearSync(state.subtitles, scale, 0);
 
     renderSubtitleTable();
     drawWaveform();
