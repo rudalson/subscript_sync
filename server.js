@@ -8,6 +8,7 @@ const { serializeSubtitle } = require('./lib/subtitleSerializer');
 const { calculateTwoPointParameters, applyLinearSync, applyShiftOffset, identifyFpsPattern } = require('./lib/syncEngine');
 const { ANALYSIS_VERSION, extractAudioEnvelope, findOptimalSync } = require('./lib/audioAnalyzer');
 const { probeVideo, streamDirectVideo, streamTranscodedVideo } = require('./lib/videoStreamer');
+const { resolveLocalFile, openNativeFileDialog } = require('./lib/fileLocator');
 
 const app = express();
 const PORT = process.env.PORT || 4200;
@@ -68,13 +69,14 @@ app.post('/api/load/local', async (req, res) => {
     const { videoPath, subtitlePath } = req.body;
     const response = {};
 
-    if (subtitlePath && fs.existsSync(subtitlePath)) {
-      const buffer = fs.readFileSync(subtitlePath);
+    const resolvedSub = resolveLocalFile(subtitlePath);
+    if (resolvedSub && fs.existsSync(resolvedSub)) {
+      const buffer = fs.readFileSync(resolvedSub);
       const { text, encoding } = decodeSubtitleBuffer(buffer);
       const parsed = parseSubtitle(text);
       response.subtitle = {
-        path: subtitlePath,
-        filename: path.basename(subtitlePath),
+        path: resolvedSub,
+        filename: path.basename(resolvedSub),
         format: parsed.format,
         encoding,
         count: parsed.items.length,
@@ -82,10 +84,11 @@ app.post('/api/load/local', async (req, res) => {
       };
     }
 
-    if (videoPath && fs.existsSync(videoPath)) {
-      const videoInfo = await probeVideo(videoPath);
+    const resolvedVideo = resolveLocalFile(videoPath);
+    if (resolvedVideo && fs.existsSync(resolvedVideo)) {
+      const videoInfo = await probeVideo(resolvedVideo);
       response.video = {
-        path: videoPath,
+        path: resolvedVideo,
         ...videoInfo
       };
     }
@@ -101,9 +104,10 @@ app.post('/api/load/local', async (req, res) => {
  */
 app.get('/api/stream/video', async (req, res) => {
   try {
-    const videoPath = req.query.path;
+    let videoPath = req.query.path;
     const seekTime = parseFloat(req.query.t || '0');
 
+    videoPath = resolveLocalFile(videoPath);
     if (!videoPath || !fs.existsSync(videoPath)) {
       return res.status(404).send('비디오 파일을 찾을 수 없습니다.');
     }
@@ -125,7 +129,8 @@ app.get('/api/stream/video', async (req, res) => {
  */
 app.post('/api/audio/analyze', async (req, res) => {
   try {
-    const { videoPath } = req.body;
+    let { videoPath } = req.body;
+    videoPath = resolveLocalFile(videoPath);
     if (!videoPath || !fs.existsSync(videoPath)) {
       return res.status(400).json({ error: '비디오 파일 경로가 유효하지 않습니다.' });
     }
@@ -159,7 +164,8 @@ app.post('/api/audio/analyze', async (req, res) => {
  */
 app.post('/api/sync/auto', async (req, res) => {
   try {
-    const { videoPath, subtitles } = req.body;
+    let { videoPath, subtitles } = req.body;
+    videoPath = resolveLocalFile(videoPath);
     if (!videoPath || !fs.existsSync(videoPath)) {
       return res.status(400).json({ error: '비디오 파일 경로가 필요합니다.' });
     }
@@ -191,6 +197,62 @@ app.post('/api/sync/auto', async (req, res) => {
     });
   } catch (err) {
     return res.status(500).json({ error: `자동 싱크 계산 실패: ${err.message}` });
+  }
+});
+
+/**
+ * Endpoint: Automatically locate a file on disk by filename
+ */
+app.post('/api/resolve/file', async (req, res) => {
+  try {
+    const { filename } = req.body;
+    const resolved = resolveLocalFile(filename);
+    if (!resolved) {
+      return res.json({ success: false, error: '로컬 디스크에서 파일을 찾지 못했습니다.' });
+    }
+
+    let info = {};
+    try {
+      info = await probeVideo(resolved);
+    } catch (e) {}
+
+    return res.json({
+      success: true,
+      path: resolved,
+      filename: path.basename(resolved),
+      ...info
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Endpoint: Open native Windows file picker dialog
+ */
+app.post('/api/browse/native', async (req, res) => {
+  try {
+    const { type } = req.body;
+    const selectedPath = await openNativeFileDialog(type || 'video');
+    if (!selectedPath) {
+      return res.json({ success: false, cancelled: true });
+    }
+
+    let info = {};
+    if (type !== 'subtitle') {
+      try {
+        info = await probeVideo(selectedPath);
+      } catch (e) {}
+    }
+
+    return res.json({
+      success: true,
+      path: selectedPath,
+      filename: path.basename(selectedPath),
+      ...info
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
   }
 });
 

@@ -744,9 +744,49 @@ btnResetOffset.addEventListener('click', () => {
    Auto-Sync via Audio VAD
    ========================================================= */
 btnRunAutoSync.addEventListener('click', async () => {
-  if (!state.videoMeta || !state.videoMeta.path) {
-    return showToast('동영상을 먼저 경로로 불러오세요.', 'error');
+  if (!state.videoMeta) {
+    return showToast('동영상을 먼저 불러오세요.', 'error');
   }
+
+  // If disk path is missing, try auto-resolving by filename or ask native file picker
+  if (!state.videoMeta.path && state.videoMeta.filename) {
+    try {
+      const r = await fetch('/api/resolve/file', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: state.videoMeta.filename })
+      });
+      const d = await r.json();
+      if (d.success && d.path) {
+        state.videoMeta.path = d.path;
+        videoStatusChip.title = d.path;
+        loadAudioWaveform(d.path);
+      }
+    } catch (e) {}
+  }
+
+  if (!state.videoMeta.path) {
+    showToast('FFmpeg 오디오 분석을 위해 파일 위치를 선택해주세요.', 'info');
+    try {
+      const bRes = await fetch('/api/browse/native', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'video' })
+      });
+      const bData = await bRes.json();
+      if (bData.success && bData.path) {
+        state.videoMeta.path = bData.path;
+        videoStatusChip.title = bData.path;
+        loadAudioWaveform(bData.path);
+        showToast(`동영상 경로 연결 완료: ${bData.path}`, 'success');
+      } else {
+        return showToast('동영상 경로가 필요합니다.', 'error');
+      }
+    } catch (e) {
+      return showToast('동영상 경로를 찾을 수 없습니다.', 'error');
+    }
+  }
+
   if (!state.subtitles || state.subtitles.length === 0) {
     return showToast('자막을 먼저 불러오세요.', 'error');
   }
@@ -875,11 +915,35 @@ document.getElementById('btnCancelLoad').addEventListener('click', () => {
   fileModal.style.display = 'none';
 });
 
-document.getElementById('btnBrowseVideo').addEventListener('click', () => {
+document.getElementById('btnBrowseVideo').addEventListener('click', async () => {
+  try {
+    const res = await fetch('/api/browse/native', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'video' })
+    });
+    const data = await res.json();
+    if (data.success && data.path) {
+      document.getElementById('videoPathInput').value = data.path;
+      return;
+    }
+  } catch (e) {}
   videoFileInput.click();
 });
 
-document.getElementById('btnBrowseSubtitle').addEventListener('click', () => {
+document.getElementById('btnBrowseSubtitle').addEventListener('click', async () => {
+  try {
+    const res = await fetch('/api/browse/native', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'subtitle' })
+    });
+    const data = await res.json();
+    if (data.success && data.path) {
+      document.getElementById('subPathInput').value = data.path;
+      return;
+    }
+  } catch (e) {}
   subFileInput.click();
 });
 
@@ -940,7 +1004,7 @@ document.getElementById('btnConfirmLoad').addEventListener('click', async () => 
   }
 });
 
-function loadVideoFileDirectly(file) {
+async function loadVideoFileDirectly(file) {
   state.videoMeta = {
     filename: file.name,
     isDirectPlayable: true
@@ -950,6 +1014,25 @@ function loadVideoFileDirectly(file) {
   videoStatusChip.classList.add('is-loaded');
   video.src = URL.createObjectURL(file);
   showToast(`동영상 · ${file.name}`, 'info');
+
+  // Automatically resolve disk path via backend to enable FFmpeg features (waveform & auto-sync)
+  try {
+    const res = await fetch('/api/resolve/file', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename: file.name })
+    });
+    const data = await res.json();
+    if (data.success && data.path) {
+      state.videoMeta.path = data.path;
+      state.videoMeta.vCodec = data.vCodec;
+      state.videoMeta.aCodec = data.aCodec;
+      videoStatusChip.title = data.path;
+      loadAudioWaveform(data.path);
+    }
+  } catch (e) {
+    console.warn('Auto-resolve video path failed', e);
+  }
 }
 
 async function loadSubtitleFileDirectly(file) {
@@ -977,6 +1060,19 @@ async function loadSubtitleFileDirectly(file) {
     renderSubtitleTable();
     drawWaveform();
     showToast(`자막 ${data.count}개 불러옴 · ${data.format} · ${data.encoding}`, 'success');
+
+    // Automatically resolve disk path
+    try {
+      const resResolve = await fetch('/api/resolve/file', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: safeFilename })
+      });
+      const dataResolve = await resResolve.json();
+      if (dataResolve.success && dataResolve.path) {
+        state.subMeta.path = dataResolve.path;
+      }
+    } catch (e) {}
   } catch (err) {
     showToast(`자막 불러오기 실패: ${err.message}`, 'error');
   }

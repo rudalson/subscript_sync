@@ -1084,12 +1084,38 @@ video {
   background: #1f1f1e;
 }
 
+.sub-table tr.active-cue {
+  background: rgba(255, 91, 58, 0.22);
+}
+
+.sub-table tr.active-cue:hover {
+  background: rgba(255, 91, 58, 0.3);
+}
+
 .sub-table tr.active-cue td:first-child {
-  box-shadow: inset 2px 0 0 var(--playhead);
+  box-shadow: inset 3px 0 0 var(--playhead);
+}
+
+.sub-table tr.active-cue .col-id {
+  color: var(--playhead);
+  font-weight: 600;
+}
+
+.sub-table tr.active-cue .col-time {
+  color: #ffc9be;
+}
+
+.sub-table tr.active-cue .col-dur {
+  color: #e5b3a8;
 }
 
 .sub-table tr.active-cue .col-text {
-  color: #fff;
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.sub-table tr.active-cue.selected {
+  background: rgba(255, 100, 50, 0.3);
 }
 
 .sub-table tr.selected {
